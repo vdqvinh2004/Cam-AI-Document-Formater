@@ -1,0 +1,9 @@
+{
+  "name": "Cam DocFormater Online",
+  "short_name": "Cam DocFormater",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#173f3b",
+  "theme_color": "#173f3b",
+  "icons": [{ "src": "/assets/paperloom-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

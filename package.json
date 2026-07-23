@@ -1,0 +1,36 @@
+{
+  "name": "cam-docformater",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "yarn@1.22.22",
+  "description": "Cam DocFormater document formatting workspace",
+  "author": "Cam DocFormater",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.web.config.ts --host 127.0.0.1",
+    "build": "vite build --config vite.web.config.ts",
+    "typecheck": "tsc -p tsconfig.web.json --noEmit --pretty false",
+    "lint": "eslint src/web tests/web vite.web.config.ts",
+    "test": "vitest run tests/web",
+    "test:e2e": "playwright test --config=playwright.web.config.ts",
+    "test:browser": "yarn typecheck && yarn lint && yarn test && yarn test:e2e && yarn build"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.2",
+    "@types/node": "^24.0.10",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@typescript-eslint/eslint-plugin": "^8.36.0",
+    "@typescript-eslint/parser": "^8.36.0",
+    "@vitejs/plugin-react": "^4.6.0",
+    "eslint": "^9.30.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
+  }
+}

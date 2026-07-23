@@ -1,0 +1,14 @@
+:root { font-family: Georgia, 'Times New Roman', serif; color: #173f3b; background: #f1eee6; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+button { border: 0; padding: 13px 18px; color: #fffaf1; background: #d46e4b; font: 700 13px Menlo, monospace; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.web-shell { min-height: 100vh; padding: 28px clamp(20px, 6vw, 96px); background: radial-gradient(circle at 90% 12%, #f2c77e 0, transparent 22%), linear-gradient(145deg, #f1eee6, #c9ddd1); }
+.web-header, footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 1120px; margin: auto; font: 11px Menlo, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; font-weight: 700; }
+.brand img { width: 28px; height: 28px; }
+.product-tag, footer { color: #55736a; }
+.web-intro { max-width: 850px; margin: 15vh auto 64px; }.kicker, .upload-label { color: #d46e4b; font: 700 12px Menlo, monospace; text-transform: uppercase; letter-spacing: .12em; }.web-intro h1 { max-width: 760px; margin: 20px 0; font-size: clamp(52px, 9vw, 112px); line-height: .9; font-weight: 400; }.web-intro > p:last-child { max-width: 510px; font-size: 20px; line-height: 1.45; }
+.web-upload, .web-settings, .web-action { max-width: 1120px; margin: 0 auto 18px; padding: 28px; border: 1px solid #8ca79b; background: rgba(255, 252, 244, .62); }.web-upload { box-shadow: 12px 12px 0 #acc8b6; }.web-upload h2, .web-settings h2 { margin: 12px 0 6px; font-size: 28px; font-weight: 400; }.web-upload p:not(.upload-label), .web-settings p:not(.upload-label) { color: #55736a; }.web-settings label { display: grid; gap: 8px; max-width: 420px; margin: 20px 0 12px; color: #55736a; font: 700 12px Menlo, monospace; text-transform: uppercase; }.web-settings input { padding: 12px; border: 1px solid #8ca79b; background: #fffdf6; color: #173f3b; }.web-disclosure { display: flex; gap: 10px; align-items: flex-start; color: #55736a; font: 13px/1.4 Menlo, monospace; }.web-action p { color: #55736a; font: 13px Menlo, monospace; } footer { padding: 28px 0; } footer a { color: inherit; }
+@media (max-width: 640px) { .web-intro { margin-top: 12vh; }.web-intro h1 { font-size: 58px; }.web-upload { box-shadow: 7px 7px 0 #acc8b6; } .web-header, footer { align-items: flex-start; flex-direction: column; } }

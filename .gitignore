@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+*.log
+.env*
+.DS_Store
+*.tsbuildinfo
+.vite/
+.vercel/
+coverage/
+test-results/
+playwright-report/
+*.tgz
+.idea/
+.vscode/*.log
+.build/
+.swiftpm/
