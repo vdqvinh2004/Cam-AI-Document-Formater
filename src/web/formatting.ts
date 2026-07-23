@@ -40,7 +40,7 @@ export async function requestFormattingPlan(source: BrowserSource, style: Browse
   if (!apiKey) throw new Error('Configure a Gemini API key before formatting.');
   const warnings = source.format === 'txt' || source.format === 'markdown' ? [] : ['Preview is unavailable for this format; the original file will be preserved.'];
   const tokens = resolveBrowserStyle(style);
-  const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+  const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({ contents: [{ parts: [{ text: `Return JSON only with presentation-only formatting operations. Do not change content. Style: ${JSON.stringify(tokens)}. Instructions: ${instructions.slice(0, 2000)}. Format: ${source.format}` }] }] }),
   });

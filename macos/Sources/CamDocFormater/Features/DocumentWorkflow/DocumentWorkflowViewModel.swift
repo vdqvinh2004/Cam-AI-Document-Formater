@@ -13,15 +13,42 @@ public final class DocumentWorkflowViewModel {
     public var instructions = ""
     public var disclosureAccepted = false
     public var apiKey = ""
+    public private(set) var hasCredential = false
     public var isShowingOpenPanel = false
     public var isShowingSettings = false
 
     private let client: any GeminiClient
+    private let credentialStore: any CredentialStore
     private let adapterRegistry = NativeAdapterRegistry()
     private var coordinator: JobCoordinator?
 
-    public init(client: any GeminiClient = HTTPGeminiClient()) {
+    public init(client: any GeminiClient = HTTPGeminiClient(), credentialStore: any CredentialStore = KeychainCredentialStore()) {
         self.client = client
+        self.credentialStore = credentialStore
+        hasCredential = (try? credentialStore.read()?.isEmpty == false) ?? false
+    }
+
+    public func saveAPIKey() {
+        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        do {
+            try credentialStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+            apiKey = ""
+            hasCredential = true
+            snapshot.errorMessage = nil
+        } catch {
+            snapshot.errorMessage = "Could not save the API key securely."
+        }
+    }
+
+    public func removeAPIKey() {
+        do {
+            try credentialStore.remove()
+            apiKey = ""
+            hasCredential = false
+            snapshot.errorMessage = nil
+        } catch {
+            snapshot.errorMessage = "Could not remove the API key."
+        }
     }
 
     public func load(url: URL) {
@@ -49,7 +76,8 @@ public final class DocumentWorkflowViewModel {
         let coordinator = JobCoordinator()
         self.coordinator = coordinator
         Task { @MainActor in
-            await coordinator.start(profile: profile, document: source, client: client, apiKey: apiKey, disclosureAccepted: disclosureAccepted, sourceData: snapshot.sourceData, sourceHash: snapshot.sourceData.map { NativeDigestBridge.hex($0) } ?? "")
+            let storedKey = (try? credentialStore.read()) ?? ""
+            await coordinator.start(profile: profile, document: source, client: client, apiKey: storedKey, disclosureAccepted: disclosureAccepted, sourceData: snapshot.sourceData, sourceHash: snapshot.sourceData.map { NativeDigestBridge.hex($0) } ?? "")
             while let current = await coordinator.snapshot as WorkflowSnapshot?, current.phase != .readyToExport && current.phase != .failed && current.phase != .cancelled {
                 snapshot = current
                 await Task.yield()

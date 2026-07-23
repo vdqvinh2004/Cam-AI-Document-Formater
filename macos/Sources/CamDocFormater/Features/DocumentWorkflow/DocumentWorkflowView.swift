@@ -47,7 +47,7 @@ public struct DocumentWorkflowView: View {
                 HStack {
                     Button("Generate formatting plan") { model.generate() }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.snapshot.source == nil || !model.disclosureAccepted || model.apiKey.isEmpty)
+                        .disabled(model.snapshot.source == nil || !model.disclosureAccepted || !model.hasCredential)
                     if model.snapshot.phase == .generating || model.snapshot.phase == .validating {
                         Button("Cancel") { model.cancel() }
                     }
@@ -85,7 +85,15 @@ private struct NativeSettingsView: View {
     var body: some View {
         Form {
             SecureField("Gemini API key", text: $model.apiKey)
-            Text("Stored in macOS Keychain in release builds. Never logged.").foregroundStyle(.secondary)
+            HStack {
+                Button(model.hasCredential ? "Replace key" : "Save key") { model.saveAPIKey() }
+                    .disabled(model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if model.hasCredential {
+                    Button("Delete key", role: .destructive) { model.removeAPIKey() }
+                }
+            }
+            Text(model.hasCredential ? "Key stored in macOS Keychain. Never shown or logged." : "No Gemini key stored. Key remains in macOS Keychain and is never logged.")
+                .foregroundStyle(.secondary)
         }
         .padding(24)
         .frame(width: 420)

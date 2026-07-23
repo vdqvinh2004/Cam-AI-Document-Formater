@@ -8,7 +8,7 @@ public struct HTTPGeminiClient: GeminiClient, Sendable {
     public let session: URLSession
     public let endpoint: URL
 
-    public init(session: URLSession = .shared, endpoint: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")!) {
+    public init(session: URLSession = .shared, endpoint: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent")!) {
         self.session = session
         self.endpoint = endpoint
     }
