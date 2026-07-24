@@ -47,12 +47,12 @@ and documentation necessary to support their behavior and future maintenance.
 
 ## Additional Constraints
 
-The application is a macOS desktop application. The supported macOS version, toolchain, and
-distribution method MUST be stated in each implementation plan when they become known. The
-application MUST avoid network services unless a feature explicitly requires them. Sensitive
-data MUST use macOS-approved storage and access controls when persistence is required. The
-interface MUST remain usable at the minimum supported window size and with accessibility
-features enabled.
+The product consists of a native macOS application and a browser application. Each implementation
+plan MUST state platform, toolchain, distribution, storage, and network boundaries for both
+products when they become known. The application MUST avoid network services unless a feature
+explicitly requires them. Sensitive data MUST use platform-approved storage and access controls
+when persistence is required. Each interface MUST remain usable at its minimum supported size
+and with accessibility features enabled.
 
 ## Development Workflow
 
@@ -77,4 +77,4 @@ non-semantic corrections. The constitution MUST be reviewed during feature plann
 readiness checks. Any exception MUST be documented in the plan's Complexity Tracking section
 and approved by the project maintainer before implementation proceeds.
 
-**Version**: 1.0.0 | **Ratified**: TODO(RATIFICATION_DATE): initial adoption date not provided | **Last Amended**: 2026-07-23
+**Version**: 1.1.0 | **Ratified**: TODO(RATIFICATION_DATE): initial adoption date not provided | **Last Amended**: 2026-07-24

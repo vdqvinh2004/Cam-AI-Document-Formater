@@ -17,6 +17,23 @@ export interface BrowserResult {
   warnings: string[];
 }
 
+interface BrowserPresentation {
+  bold?: boolean;
+  italic?: boolean;
+}
+
+interface BrowserFormattingOperation {
+  kind: 'set-presentation';
+  nodeID: string;
+  presentation: BrowserPresentation;
+}
+
+interface BrowserFormattingPlan {
+  version: number;
+  operations: BrowserFormattingOperation[];
+  warnings?: string[];
+}
+
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const extensionFormats: Record<string, BrowserSource['format']> = {
   '.txt': 'txt', '.md': 'markdown', '.markdown': 'markdown', '.docx': 'docx', '.pdf': 'pdf',
@@ -36,21 +53,45 @@ export async function readSource(file: File): Promise<BrowserSource> {
   return { file, format, text: format === 'txt' || format === 'markdown' ? new TextDecoder().decode(bytes) : '', sourceHash: await hashBytes(bytes) };
 }
 
-export async function requestFormattingPlan(source: BrowserSource, style: BrowserStyleName, instructions: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<{ tokens: BrowserStyleTokens; warnings: string[] }> {
+export async function requestFormattingPlan(source: BrowserSource, style: BrowserStyleName, instructions: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<{ plan: BrowserFormattingPlan; warnings: string[] }> {
   if (!apiKey) throw new Error('Configure a Gemini API key before formatting.');
   const warnings = source.format === 'txt' || source.format === 'markdown' ? [] : ['Preview is unavailable for this format; the original file will be preserved.'];
   const tokens = resolveBrowserStyle(style);
   const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({ contents: [{ parts: [{ text: `Return JSON only with presentation-only formatting operations. Do not change content. Style: ${JSON.stringify(tokens)}. Instructions: ${instructions.slice(0, 2000)}. Format: ${source.format}` }] }] }),
+    body: JSON.stringify({ contents: [{ parts: [{ text: `Return JSON only matching {"version":1,"operations":[{"kind":"set-presentation","nodeID":"p0","presentation":{"bold":true,"italic":false}}],"warnings":[]}. Use only existing node IDs. Presentation fields only: bold, italic. Do not change content. Style: ${JSON.stringify(tokens)}. Instructions: ${instructions.slice(0, 2000)}. Format: ${source.format}` }] }] }),
   });
   if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
-  return { tokens, warnings };
+  const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  const rawPlan = payload.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '').trim();
+  if (!rawPlan) throw new Error('Gemini returned an empty formatting plan.');
+  let plan: BrowserFormattingPlan;
+  try { plan = JSON.parse(rawPlan) as BrowserFormattingPlan; }
+  catch { throw new Error('Gemini returned an invalid formatting plan.'); }
+  if (plan.version !== 1 || !Array.isArray(plan.operations)) throw new Error('Gemini returned an unsupported formatting plan.');
+  return { plan, warnings: [...warnings, ...(plan.warnings ?? [])] };
 }
 
-export async function formatSource(source: BrowserSource): Promise<BrowserResult> {
-  const blob = new Blob([await source.file.arrayBuffer()], { type: source.file.type || 'application/octet-stream' });
-  return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: source.format === 'txt' || source.format === 'markdown', warnings: source.format === 'txt' || source.format === 'markdown' ? [] : ['Formatting is preserved in the exported source file; rich preview is not available for this format yet.'] };
+export async function formatSource(source: BrowserSource, plan: BrowserFormattingPlan): Promise<BrowserResult> {
+  const warnings = source.format === 'markdown'
+    ? []
+    : ['This format cannot store presentation changes in the browser; the original file was preserved.'];
+  const text = source.format === 'markdown' ? applyMarkdownPlan(source.text, plan) : await source.file.text();
+  const blob = new Blob([text], { type: source.file.type || 'application/octet-stream' });
+  return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: source.format === 'txt' || source.format === 'markdown', warnings };
+}
+
+function applyMarkdownPlan(source: string, plan: BrowserFormattingPlan): string {
+  const operations = new Map(plan.operations.map((operation) => [operation.nodeID, operation]));
+  return source.split(/\r?\n/).map((line, index) => {
+    const nodeID = /^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`;
+    const presentation = operations.get(nodeID)?.presentation;
+    if (!presentation) return line;
+    const content = line.replace(/^(#{1,6}\s+)/, '');
+    const prefix = line.slice(0, line.length - content.length);
+    const marked = presentation.bold && presentation.italic ? `***${content}***` : presentation.bold ? `**${content}**` : presentation.italic ? `*${content}*` : content;
+    return `${prefix}${marked}`;
+  }).join('\n');
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

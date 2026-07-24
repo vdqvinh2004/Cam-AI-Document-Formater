@@ -11,9 +11,10 @@
 Build two separate products with one workflow contract. The browser product accepts TXT, Markdown,
 DOCX, and PDF files, extracts each document into a canonical content-and-structure representation,
 asks Gemini for a constrained formatting plan, applies that plan locally, validates a round-trip
-representation, and downloads a separate file in the same format. The native product is a new
-SwiftUI macOS application with the same workflow and preservation rules, but native navigation,
-window behavior, menus, dialogs, and repeated-use interaction design.
+representation, shows source/result/compare previews where safely supported, and downloads a
+separate file in the same format. The native product is a SwiftUI macOS application with the same
+workflow, preview contract, and preservation rules, but native navigation, window behavior, menus,
+dialogs, and repeated-use interaction design.
 
 ## Technical Context
 
@@ -26,13 +27,15 @@ window behavior, menus, dialogs, and repeated-use interaction design.
 **Language/Version**: Web: TypeScript 5.x, Node.js 22 LTS, React 19.x, Vite 7.x. Native: Swift
 6.x, SwiftUI, Observation framework, macOS 14 Sonoma or later.
 
-**Primary Dependencies**: Web uses `@google/genai`, `zod`, `unified`/`remark-parse`/
-`remark-stringify`, `pdfjs-dist`, and `pdf-lib` where browser-compatible. Native uses Swift
-Package Manager dependencies for Gemini, document adapters, and fixture processing.
+**Primary Dependencies**: Web uses browser-compatible TypeScript adapters, `@google/genai`, `zod`,
+`unified`/`remark-parse`/`remark-stringify`, `pdfjs-dist`, and `pdf-lib` where required for
+rendering, extraction, comparison, and export. Native uses Swift Package Manager, SwiftUI,
+Observation, PDFKit, UniformTypeIdentifiers, Keychain services, and fixture processing.
 
-**Storage**: Web uses documented browser storage for the Gemini API key only and keeps document
-data in memory. Native uses Keychain for the Gemini API key and SwiftData only for permitted
-non-document settings and ephemeral job metadata. No product persists document contents.
+**Storage**: Web uses documented origin-scoped browser storage for the Gemini API key only and
+keeps documents, preview snapshots, and comparison data in memory. Native uses Keychain for the
+Gemini API key and SwiftData only for permitted non-document settings and ephemeral job metadata.
+No product persists document contents or preview data.
 
 **Testing**: Web uses Vitest, Playwright/browser integration, TypeScript, and ESLint. Native uses
 XCTest and Swift Testing, including packaged macOS workflow tests.
@@ -40,11 +43,13 @@ XCTest and Swift Testing, including packaged macOS workflow tests.
 **Target Platform**: macOS 14 Sonoma and later, Apple Silicon first; signed `.app` bundled in
 a notarized `.dmg`
 
-**Project Type**: Separate browser web application and native macOS SwiftUI application.
+**Project Type**: Separate browser web application and native macOS SwiftUI application. Browser
+build contains no Electron, Node filesystem, Keychain, or native-dialog runtime dependencies.
 
-**Performance Goals**: Renderer remains interactive during all jobs; local extraction,
-validation, and serialization show progress for operations longer than 500 ms; a typical
-document completes local stages within 10 seconds excluding Gemini network time
+**Performance Goals**: Both products remain interactive during all jobs; local extraction,
+validation, serialization, and supported preview comparison show progress for operations longer
+than 500 ms; 95% of representative valid fixtures complete each local stage within 10 seconds,
+excluding Gemini network time. Measurement uses the fixture matrix and timing task in `tasks.md`.
 
 **Constraints**: No source or generated document persistence; API key never reaches logs; explicit
 disclosure and user action before network transmission; fail closed on incomplete validation;
@@ -123,14 +128,16 @@ package.json                 # web product scripts and dependencies
 vite.config.ts               # web product build
 ```
 
-**Structure Decision**: Separate products and runtime boundaries. Refactor current TypeScript code
-into browser-only web code; remove Electron main/preload, IPC handlers, `keytar`, and
-electron-builder from product scope. Build native macOS app as Swift Package with SwiftUI,
-MVVM, Observation, Actors, `URLSession`, Keychain, and SwiftData. Shared behavior is specified
-through format, formatting-plan, validation, and privacy contracts rather than shared runtime
-code. Native and web UIs remain intentionally different: native uses windowed navigation,
-commands, menus, focus continuity, and dense repeated-use surfaces; web uses responsive layouts,
-browser navigation, touch targets, shareable routes, and refresh-safe state.
+**Structure Decision**: Separate products and runtime boundaries. Browser code lives under `src/web/`
+with browser file APIs, origin-scoped key storage, in-memory document state, Gemini requests,
+preview, comparison, and download export. Native code lives under `macos/` with SwiftUI, MVVM,
+Observation, Actors, `URLSession`, Keychain, PDFKit, and native file panels. No Electron main,
+preload, IPC, `keytar`, electron-builder, Node filesystem, or native-dialog code belongs in the
+browser build. Shared behavior is specified through format, formatting-plan, preview, validation,
+and privacy contracts rather than shared runtime code. Native and web UIs remain intentionally
+different: native uses windowed navigation, commands, menus, focus continuity, and dense repeated-
+use surfaces; web uses responsive layouts, browser navigation, touch targets, shareable routes,
+and refresh-safe state.
 
 ## Complexity Tracking
 

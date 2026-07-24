@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "38a25f560f56b19174c53aedc86484068c82ddc4",
+    "indexed_at": "2026-07-24T07:46:40Z",
+    "project": "Cam-AI-Document-Formater",
+    "nodes": 993,
+    "edges": 1624,
+    "original_size": 2424832,
+    "compressed_size": 314289,
+    "compression_level": 9
+}

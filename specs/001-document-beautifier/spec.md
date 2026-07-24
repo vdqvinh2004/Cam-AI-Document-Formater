@@ -58,6 +58,33 @@ As a macOS user, I want the application to prove that the output retains the sou
 3. **Given** the Gemini request, conversion, validation, or export fails, **When** the failure occurs, **Then** the application preserves the original file, explains the failure in user-facing language, and offers a retry or corrective next step.
 4. **Given** the application is closed after processing, **When** the user later opens it, **Then** no source documents, generated documents, or document contents are available from application storage.
 
+---
+
+### User Story 4 - Inspect Formatting Changes (Priority: P2)
+
+As a user, I want to inspect the current document, formatted document, and their differences so
+I can understand presentation changes before exporting.
+
+**Why this priority**: Visible comparison makes formatting-only behavior understandable and helps
+users trust the preservation result.
+
+**Independent Test**: Load TXT, Markdown, DOCX, and PDF fixtures; verify source preview before
+generation, formatted preview after validation, compare behavior where supported, and explicit
+unavailable messaging where rendering or comparison is unsafe.
+
+**Acceptance Scenarios**:
+
+1. **Given** a readable supported document is loaded, **When** the user opens preview, **Then** the
+	product shows a read-only source view and does not modify or upload the document.
+2. **Given** formatting and validation complete with a pass, **When** the user opens formatted
+	preview, **Then** the product shows the formatted result and preserves validation status.
+3. **Given** source and formatted previews are renderable and comparable, **When** the user opens
+	compare view, **Then** the product identifies presentation-only changes and confirms preserved
+	content without exposing raw credentials or persisting preview data.
+4. **Given** a format or feature cannot be rendered or compared reliably, **When** the user opens
+	preview or compare view, **Then** the product explains that preview is unavailable and keeps
+	export controlled by validation.
+
 ### Edge Cases
 
 - A file has a supported extension but is corrupt, password-protected, encrypted, or otherwise unreadable.
@@ -95,6 +122,9 @@ As a macOS user, I want the application to prove that the output retains the sou
 - **FR-016**: The application MUST provide retry and cancellation actions where the current operation supports them.
 - **FR-017**: The native product MUST provide accessible controls, keyboard navigation, readable status feedback, and standard macOS file and error interactions. The browser product MUST provide accessible controls, browser navigation, touch-sized targets, and readable status feedback.
 - **FR-018**: The application MUST avoid retaining source files, output files, extracted content, prompts, or processing history in application storage after the current workflow ends, except for the user-managed exported file at the destination they choose.
+- **FR-019**: Each product MUST show a read-only preview of the loaded source document before generation when the format can be rendered safely.
+- **FR-020**: Each product MUST show a read-only preview of the formatted result after validation and MUST provide source, formatted, and compare views without enabling export unless validation passes.
+- **FR-021**: Compare view MUST identify presentation-only changes when reliable comparison is available, confirm preserved content, and show a clear preview-unavailable state for formats or features that cannot be rendered or compared safely.
 
 ### Key Entities
 
@@ -104,6 +134,7 @@ As a macOS user, I want the application to prove that the output retains the sou
 - **Validation Result**: The pre-export comparison describing whether the generated document preserves the source text, images, tables, hyperlinks, and structure.
 - **Exported Document**: A validated, polished copy saved by the user in the same supported file format as the source.
 - **Gemini API Key**: The user's credential stored locally in secure macOS storage and used to request formatting from Gemini; it is not included in document outputs or analytics.
+- **Preview Comparison**: An ephemeral source/result presentation containing renderability, validation status, preserved-content status, and presentation-only change details where comparison is supported.
 
 ## Success Criteria *(mandatory)*
 
@@ -117,6 +148,9 @@ As a macOS user, I want the application to prove that the output retains the sou
 - **SC-006**: After the application is closed, a storage inspection finds no source documents, generated documents, document contents, prompts, or processing history retained by the application.
 - **SC-007**: Users can identify whether processing is active, completed, cancelled, or blocked by validation within 5 seconds of viewing the application state.
 - **SC-008**: The application never modifies the source document in automated tests covering successful processing, failed generation, failed validation, cancellation, and export destination conflicts.
+- **SC-009**: 100% of supported TXT and Markdown workflow tests show source preview before generation and formatted preview after validation; each compare result either identifies presentation-only changes or reports an explicit unavailable state.
+- **SC-010**: 100% of DOCX and PDF fixtures with unsupported rendering or comparison capability show an explicit preview-unavailable state and remain subject to validation-gated export.
+- **SC-011**: At least 95% of valid fixture documents produce a preview, comparison result, or explicit unavailable state within 10 seconds after each local processing stage completes.
 
 ## Assumptions
 

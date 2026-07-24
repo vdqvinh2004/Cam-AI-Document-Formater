@@ -10,7 +10,7 @@ test('uploads, discloses, formats, and offers a browser download', async ({ page
   await expect(page.getByRole('heading', { name: 'notes.txt' })).toBeVisible();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Start formatting' }).click();
-  await expect(page.getByRole('status')).toContainText('Validation passed');
+  await expect(page.getByRole('status')).toContainText('Formatting plan applied');
   await expect(page.getByRole('button', { name: 'Download formatted file' })).toBeVisible();
 });
 

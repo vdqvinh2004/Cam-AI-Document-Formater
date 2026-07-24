@@ -6,9 +6,5 @@ enum NativeDesignSystem {
     static let contentSpacing: CGFloat = 20
     static let panelPadding: CGFloat = 20
     static let cornerRadius: CGFloat = 8
-
-    static func reducedMotion(_ content: Animation = .easeInOut(duration: 0.2)) -> Animation? {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : content
-    }
 }
 #endif

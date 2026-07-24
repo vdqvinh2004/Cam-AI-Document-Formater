@@ -38,7 +38,7 @@ function WebApp() {
   const start = async () => {
     if (!source || !configured || !disclosed) return;
     setMessage('Sending the disclosed formatting request...');
-    try { await requestFormattingPlan(source, style, instructions, keyStore.getKey() ?? ''); setResult(await formatSource(source)); setMessage('Validation passed. Your content is unchanged and ready to download.'); }
+    try { const { plan, warnings } = await requestFormattingPlan(source, style, instructions, keyStore.getKey() ?? ''); const formatted = await formatSource(source, plan); setResult({ ...formatted, warnings: [...warnings, ...formatted.warnings] }); setMessage('Formatting plan applied. Content preserved and ready to download.'); }
     catch (error) { setMessage(error instanceof Error ? error.message : 'The formatting pass failed.'); }
   };
 

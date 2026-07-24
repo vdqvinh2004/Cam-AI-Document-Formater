@@ -158,10 +158,7 @@ description: "Executable task list for the Document Beautifier feature"
 - [X] T067 Add unit and Electron tests for API-key status, first save, replace, remove, missing-key behavior, Keychain failure, and renderer redaction in `tests/unit/keychain.test.ts` and `tests/integration/settings.spec.ts`
 - [X] T068 Complete desktop settings UI for current-key status, replace, remove, confirmation feedback, missing-key generation blocking, and safe errors in `src/renderer/components/SettingsPanel.tsx` and `src/renderer/main.tsx`
 - [X] T069 Add web API-key storage adapter using documented `localStorage` or cookie policy; keep desktop Keychain code out of browser bundle in `src/web/` and `docs/web-security.md`
-- [X] T070 Define preview/diff contracts for before/after content, changed presentation fields, preserved content, and validation status in `src/main/documents/validation/diff.ts` and `src/main/ipc/schemas.ts`
-- [X] T071 Implement read-only before/after preview with formatting changes, validation state, and unavailable-preview handling in `src/renderer/components/PreviewPanel.tsx`
-- [X] T072 Add bounded preview IPC flow with cancellation and safe error translation in `src/main/ipc/handlers.ts` and `src/preload/index.ts`
-- [X] T073 Add integration tests proving preview reflects changes, content stays identical, source stays untouched, and export remains validation-gated in `tests/integration/preview-diff.spec.ts`
+- [X] T070-T073 Historical Electron preview work superseded by the browser/native preview contract and implementation in Phase 11.
 - [X] T074 Create macOS design tokens and interaction guidelines from `https://evilmartians.com/chronicles/how-to-make-absolutely-any-app-look-like-a-macos-app` and `https://happycapy.ai/skills/macos-design` in `src/renderer/styles/macos.css` and `docs/macos-design.md`
 - [X] T075 Implement native-feeling title-bar safe area, toolbar, sidebar, vibrancy/material treatment where supported, native menus, keyboard shortcuts, focus rings, resize constraints, and system dialogs in `src/main/menu.ts`, `src/main/window.ts`, and `src/renderer/components/`
 - [X] T076 Add macOS visual/accessibility tests for title-bar spacing, minimum window size, keyboard navigation, reduced motion, contrast, and native dialogs in `tests/integration/macos-design.spec.ts`
@@ -324,7 +321,9 @@ and smoke suites; validate parity with workflow contracts and record prerequisit
 
 - **Phase 7**: Depends on Foundational, US1, and US3 surfaces. T067-T073 depend on Keychain, validation, and pipeline contracts. T074-T080 can proceed after renderer boundaries stabilize. T081-T083 depend on selection IPC. T084-T087 depend on job and renderer workflow. T088-T089 depend on completed variants.
 - **Phase 8**: Depends on Phase 7. T090-T093 establish identity and repository hygiene. T096-T103 extract and verify the browser-only product. T104-T107 document and verify Vercel deployment. T108 gates browser completion.
-- **Phase 9**: Depends on Phase 8 contracts and workflow behavior. T109-T112 establish the Swift package and native contracts. T113-T117 implement native services and workflow. T118-T122 implement and validate the native SwiftUI experience. T123 is the final cross-product validation gate.
+- **Phase 9**: Depends on Phase 8 contracts and workflow behavior. T109-T112 establish the Swift package and native contracts. T113-T117 implement native services and workflow. T118-T122 implement and validate the native SwiftUI experience. T123 records cross-product baseline validation.
+- **Phase 10**: Depends on Phase 9 native contracts and current native source tree. T124-T151 complete native workflow, credentials, recovery, accessibility, packaging, and release validation.
+- **Phase 11**: Depends on Phase 8 browser extraction, Phase 10 native completion, and the existing validation contracts. T152-T154 establish preview behavior and tests; T155-T158 implement and verify the browser surface; T159-T162 implement and verify the native surface; T163-T165 measure, document, and validate cross-product behavior.
 
 - **Setup (Phase 1)**: No dependencies; T003-T008 can run in parallel after T001-T002 establish the project.
 - **Foundational (Phase 2)**: Depends on Setup; T009-T024 block all user stories.
@@ -358,6 +357,8 @@ and smoke suites; validate parity with workflow contracts and record prerequisit
 - Polish documentation and independent test suites can proceed in parallel after the implementation surfaces they inspect are available.
 - Phase 8 T090-T093 can proceed in parallel. T096-T103 can proceed after browser boundaries are agreed. T104-T107 can proceed in parallel with web implementation; T108 waits for browser extraction and deployment documentation.
 - Phase 9 T109-T112 can proceed in parallel after workflow contracts are agreed. T113-T117 can proceed after native service protocols exist. T118-T121 can proceed in parallel after domain and service contracts stabilize. T122-T123 wait for native workflow and accessibility coverage.
+- Phase 10 T124-T151 follows Phase 9 and can parallelize native adapter, settings, accessibility, and packaging work where dependencies allow.
+- Phase 11 T153-T154 can proceed in parallel after T152. T155-T158 can proceed in parallel with T159-T162 once the contract is stable, with platform-specific tests preceding their implementations. T163-T164 can proceed while platform work stabilizes; T165 waits for both products.
 
 ## Parallel Example: User Story 1
 
@@ -463,7 +464,6 @@ meet standard macOS accessibility and interaction expectations.
 cancellation, restart cleanup, keyboard-only navigation, reduced motion, and multiple window sizes.
 
 - [X] T141 [P] [US3] Implement category-level validation comparison for text, images, tables, hyperlinks, structure, source hash, and inconclusive capabilities in `macos/Sources/CamDocFormater/Services/ValidationComparator.swift`
-- [X] T142 [US3] Implement before/after read-only preview models and unavailable-preview handling using validation result and presentation-only differences in `macos/Sources/CamDocFormater/Features/Preview/PreviewModel.swift`
 - [X] T143 [US3] Implement startup stale-workspace cleanup, application termination cleanup, renderer/view-model reset, and retry recovery without retaining source or generated content in `macos/Sources/CamDocFormater/Services/RecoveryCoordinator.swift`
 - [X] T144 [P] [US3] Add native accessibility identifiers, VoiceOver labels, status announcements, focus restoration, keyboard commands, reduced-motion handling, and minimum/maximum window constraints in `macos/Sources/CamDocFormater/App/AppShell.swift` and `macos/Sources/CamDocFormater/App/DesignSystem.swift`
 - [X] T145 [P] [US3] Add native validation, recovery, accessibility, keyboard, window-size, appearance, and privacy-retention tests in `macos/Tests/NativeSafetyAndAccessibilityTests.swift`
@@ -485,13 +485,84 @@ with `CFBundleIdentifier=com.camdocformater.app`; unsafe export is blocked; sour
 retention checks pass; signed packaging gaps are explicitly recorded when credentials or Xcode are
 unavailable.
 
-## Phase 10 Dependencies and Parallel Execution
+## Phase 11: Cross-Product Document Preview and Comparison
 
-- **Native foundation**: T124-T126 block native workflow integration. T127-T129 can run in parallel after the domain contracts are stable.
-- **User Story 1**: T130-T132 depend on adapter and domain contracts. T133 should be written before final implementation validation. T134-T135 depend on job and service APIs.
-- **User Story 2**: T136-T140 can proceed after native formatting and service contracts exist; T140 is independent from workflow UI work.
-- **User Story 3**: T141-T146 depend on the completed workflow and export contracts. Validation, preview, and accessibility work can proceed in parallel after T131.
-- **Packaging**: T147-T150 can proceed in parallel after the executable target and resources are defined. T151 waits for all native stories and packaging tasks.
+**Purpose**: Show loaded source, formatted result, and useful before/after comparison in both
+products without making preview state or rendered artifacts persistent.
+
+**Scope note**: TXT and Markdown must provide readable rendered previews and presentation-aware
+diffs. DOCX and PDF use available renderers where reliable; otherwise products show clear
+preview-unavailable state while retaining validation and export safety.
+
+### Contract and test foundation
+
+- [ ] T152 Define cross-product preview contract for source/output views, renderability,
+presentation-only changes, preserved content, changed node/line details, validation status, and
+safe unavailable states in `docs/preview-contract.md` and `specs/001-document-beautifier/data-model.md`
+- [ ] T153 [P] Add web unit tests for source snapshots, formatted snapshots, content equality,
+presentation-only change extraction, line-level diffing, and unsupported-format fallback in
+`tests/web/preview.test.ts`
+- [ ] T154 [P] Add native unit tests for preview construction, changed-node detection, content
+preservation, validation gating, and unavailable-preview behavior in
+`macos/Tests/NativeWorkflowTests.swift` and `macos/Tests/NativeContractsTests.swift`
+
+### Browser product preview
+
+- [ ] T155 [P] Implement browser preview/diff model with ephemeral source and formatted snapshots,
+presentation-only change detection, readable line/block changes, and format renderability in
+`src/web/preview.ts`
+- [ ] T156 Integrate source preview, formatted preview, compare mode, validation status, and
+preview-unavailable messaging into `src/web/main.tsx` without exposing API keys or persisting
+document contents
+- [ ] T157 Add responsive browser preview styling for source/result panes, compare highlights,
+mobile stacked views, keyboard focus, reduced motion, and long-document overflow in
+`src/web/styles/web.css`
+- [ ] T158 Add browser integration coverage for source preview before generation, formatted preview
+after generation, compare changes, unchanged-content messaging, validation gating, and DOCX/PDF
+fallback in `tests/web/preview.spec.ts`
+
+### Native macOS preview
+
+- [ ] T159 Extend native preview model with source/output snapshots, category and node-level
+presentation changes, content-preservation status, and explicit unavailable states in
+`macos/Sources/CamDocFormater/Features/Preview/PreviewModel.swift`
+- [ ] T160 Build SwiftUI source, formatted, and compare modes with change annotations, validation
+status, scroll/zoom behavior, and safe fallback in
+`macos/Sources/CamDocFormater/Features/Preview/PreviewView.swift` and
+`macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowView.swift`
+- [ ] T161 Connect preview lifecycle, mode selection, output updates, cancellation, reset, and
+validation-gated visibility in
+`macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowViewModel.swift`
+- [ ] T162 Add native accessibility and workflow coverage for source/result/compare modes,
+keyboard navigation, focus restoration, reduced motion, validation failure, and unavailable
+preview messaging in `macos/Tests/NativeAccessibilityTests.swift` and
+`macos/Tests/NativeWorkflowTests.swift`
+
+### Measurement and cross-product verification
+
+- [ ] T163 [P] Add fixture-matrix measurement for SC-002 validation-result coverage, SC-005
+first-time workflow completion protocol, and the plan's 10-second local-stage target in
+`tests/fixtures/README.md`, `tests/web/performance.spec.ts`,
+`macos/Tests/NativeWorkflowTests.swift`, and `specs/001-document-beautifier/quickstart.md`
+- [ ] T164 [P] Document preview behavior, supported renderers, comparison limitations, privacy
+retention rules, and fallback language in `docs/format-support.md`, `docs/web-design.md`,
+`docs/macos-design.md`, and `README.md`
+- [ ] T165 Run browser and native preview, measurement, typecheck, accessibility, and smoke
+workflows; verify source/output/compare states agree with validation and record renderer or
+environment limitations in `specs/001-document-beautifier/quickstart.md`
+
+## Phase 11 Dependencies and Parallel Execution
+
+- **Phase 10 prerequisite**: T152-T165 depend on the completed native workflow, browser extraction,
+validation contracts, and format capability declarations from Phases 8 and 10.
+- **Contract and tests**: T153-T154 can proceed in parallel after T152; each platform test should
+fail before its corresponding implementation is complete.
+- **Browser preview**: T155-T158 depend on the browser-only product boundary and T152; T155 and
+T157 can proceed in parallel before T156 integration.
+- **Native preview**: T159-T162 depend on native validation and SwiftUI workflow APIs; T159 can
+proceed before T160-T161, while T162 follows the preview surface.
+- **Measurement and release**: T163-T164 can proceed in parallel after both preview contracts
+stabilize. T165 waits for browser and native preview, measurement, accessibility, and smoke checks.
 
 ### Parallel examples
 
@@ -507,7 +578,7 @@ After T131:
 
 - T133: Native workflow contract tests
 - T134-T135: Workflow view model and UI
-- T141-T142: Validation and preview
+- T141: Validation
 - T145: Native safety/accessibility tests
 - T147-T150: Packaging and release verification
 

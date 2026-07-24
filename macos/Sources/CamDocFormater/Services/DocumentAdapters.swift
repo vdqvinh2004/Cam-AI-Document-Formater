@@ -43,10 +43,18 @@ public struct MarkdownAdapter: DocumentAdapter, Sendable {
     public func serialize(document: CanonicalDocument) throws -> Data {
         Data(document.blocks.map { block in
             switch block {
-            case let .heading(_, level, text, _): "\(String(repeating: "#", count: level)) \(text)"
-            case let .paragraph(_, text, _), let .opaque(_, _, text): text
+            case let .heading(_, level, text, presentation): "\(String(repeating: "#", count: level)) \(markdownPresentation(presentation, text))"
+            case let .paragraph(_, text, presentation): markdownPresentation(presentation, text)
+            case let .opaque(_, _, text): text
             }
         }.joined(separator: "\n").utf8)
+    }
+
+    private func markdownPresentation(_ presentation: Presentation, _ text: String) -> String {
+        if presentation.bold == true && presentation.italic == true { return "***\(text)***" }
+        if presentation.bold == true { return "**\(text)**" }
+        if presentation.italic == true { return "*\(text)*" }
+        return text
     }
 }
 
