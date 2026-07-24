@@ -58,6 +58,58 @@ public struct DocumentWorkflowView: View {
                         .foregroundStyle(validation.status == .pass ? .green : .red)
                 }
                 if let error = model.snapshot.errorMessage { Text(error).foregroundStyle(.red) }
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Preview")
+                            .font(.headline)
+                        Spacer()
+                        Picker("Preview mode", selection: $model.previewMode) {
+                            ForEach(PreviewMode.allCases, id: \.self) { mode in
+                                Text(mode.rawValue.capitalized).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    Text(model.preview.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Group {
+                        if model.previewMode == .source {
+                            ScrollView { Text(model.preview.sourceText.isEmpty ? "No source text available." : model.preview.sourceText).frame(maxWidth: .infinity, alignment: .leading) }
+                                .frame(minHeight: 180, maxHeight: 260)
+                                .padding()
+                                .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        } else if model.previewMode == .result {
+                            ScrollView { Text(model.preview.available ? (model.preview.outputText.isEmpty ? "Formatted output will appear after a successful validation pass." : model.preview.outputText) : "Preview unavailable for this format.").frame(maxWidth: .infinity, alignment: .leading) }
+                                .frame(minHeight: 180, maxHeight: 260)
+                                .padding()
+                                .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        } else {
+                            if model.preview.diffs.isEmpty {
+                                Text("No presentation-only differences were detected.")
+                            } else {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(model.preview.diffs, id: \ .line) { diff in
+                                        HStack(alignment: .top, spacing: 12) {
+                                            Text("L\(diff.line)")
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.secondary)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(diff.before)
+                                                    .foregroundStyle(.red)
+                                                Text(diff.after)
+                                                    .foregroundStyle(.green)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Spacer()
             }
             .padding(32)

@@ -496,58 +496,58 @@ preview-unavailable state while retaining validation and export safety.
 
 ### Contract and test foundation
 
-- [ ] T152 Define cross-product preview contract for source/output views, renderability,
+- [X] T152 Define cross-product preview contract for source/output views, renderability,
 presentation-only changes, preserved content, changed node/line details, validation status, and
 safe unavailable states in `docs/preview-contract.md` and `specs/001-document-beautifier/data-model.md`
-- [ ] T153 [P] Add web unit tests for source snapshots, formatted snapshots, content equality,
+- [X] T153 [P] Add web unit tests for source snapshots, formatted snapshots, content equality,
 presentation-only change extraction, line-level diffing, and unsupported-format fallback in
 `tests/web/preview.test.ts`
-- [ ] T154 [P] Add native unit tests for preview construction, changed-node detection, content
+- [X] T154 [P] Add native unit tests for preview construction, changed-node detection, content
 preservation, validation gating, and unavailable-preview behavior in
 `macos/Tests/NativeWorkflowTests.swift` and `macos/Tests/NativeContractsTests.swift`
 
 ### Browser product preview
 
-- [ ] T155 [P] Implement browser preview/diff model with ephemeral source and formatted snapshots,
+- [X] T155 [P] Implement browser preview/diff model with ephemeral source and formatted snapshots,
 presentation-only change detection, readable line/block changes, and format renderability in
 `src/web/preview.ts`
-- [ ] T156 Integrate source preview, formatted preview, compare mode, validation status, and
+- [X] T156 Integrate source preview, formatted preview, compare mode, validation status, and
 preview-unavailable messaging into `src/web/main.tsx` without exposing API keys or persisting
 document contents
-- [ ] T157 Add responsive browser preview styling for source/result panes, compare highlights,
+- [X] T157 Add responsive browser preview styling for source/result panes, compare highlights,
 mobile stacked views, keyboard focus, reduced motion, and long-document overflow in
 `src/web/styles/web.css`
-- [ ] T158 Add browser integration coverage for source preview before generation, formatted preview
+- [X] T158 Add browser integration coverage for source preview before generation, formatted preview
 after generation, compare changes, unchanged-content messaging, validation gating, and DOCX/PDF
 fallback in `tests/web/preview.spec.ts`
 
 ### Native macOS preview
 
-- [ ] T159 Extend native preview model with source/output snapshots, category and node-level
+- [X] T159 Extend native preview model with source/output snapshots, category and node-level
 presentation changes, content-preservation status, and explicit unavailable states in
 `macos/Sources/CamDocFormater/Features/Preview/PreviewModel.swift`
-- [ ] T160 Build SwiftUI source, formatted, and compare modes with change annotations, validation
+- [X] T160 Build SwiftUI source, formatted, and compare modes with change annotations, validation
 status, scroll/zoom behavior, and safe fallback in
 `macos/Sources/CamDocFormater/Features/Preview/PreviewView.swift` and
 `macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowView.swift`
-- [ ] T161 Connect preview lifecycle, mode selection, output updates, cancellation, reset, and
+- [X] T161 Connect preview lifecycle, mode selection, output updates, cancellation, reset, and
 validation-gated visibility in
 `macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowViewModel.swift`
-- [ ] T162 Add native accessibility and workflow coverage for source/result/compare modes,
+- [X] T162 Add native accessibility and workflow coverage for source/result/compare modes,
 keyboard navigation, focus restoration, reduced motion, validation failure, and unavailable
 preview messaging in `macos/Tests/NativeAccessibilityTests.swift` and
 `macos/Tests/NativeWorkflowTests.swift`
 
 ### Measurement and cross-product verification
 
-- [ ] T163 [P] Add fixture-matrix measurement for SC-002 validation-result coverage, SC-005
+- [X] T163 [P] Add fixture-matrix measurement for SC-002 validation-result coverage, SC-005
 first-time workflow completion protocol, and the plan's 10-second local-stage target in
 `tests/fixtures/README.md`, `tests/web/performance.spec.ts`,
 `macos/Tests/NativeWorkflowTests.swift`, and `specs/001-document-beautifier/quickstart.md`
-- [ ] T164 [P] Document preview behavior, supported renderers, comparison limitations, privacy
+- [X] T164 [P] Document preview behavior, supported renderers, comparison limitations, privacy
 retention rules, and fallback language in `docs/format-support.md`, `docs/web-design.md`,
 `docs/macos-design.md`, and `README.md`
-- [ ] T165 Run browser and native preview, measurement, typecheck, accessibility, and smoke
+- [X] T165 Run browser and native preview, measurement, typecheck, accessibility, and smoke
 workflows; verify source/output/compare states agree with validation and record renderer or
 environment limitations in `specs/001-document-beautifier/quickstart.md`
 

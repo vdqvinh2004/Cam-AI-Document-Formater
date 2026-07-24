@@ -16,6 +16,7 @@ public final class DocumentWorkflowViewModel {
     public private(set) var hasCredential = false
     public var isShowingOpenPanel = false
     public var isShowingSettings = false
+    public var previewMode: PreviewMode = .source
 
     private let client: any GeminiClient
     private let credentialStore: any CredentialStore
@@ -90,10 +91,15 @@ public final class DocumentWorkflowViewModel {
         Task { await coordinator?.cancel(); if let coordinator { snapshot = await coordinator.snapshot } }
     }
 
+    public var preview: PreviewModel {
+        PreviewModel(source: snapshot.source, output: snapshot.source != nil ? (snapshot.validation?.status == .pass ? snapshot.source : snapshot.source) : nil, validation: snapshot.validation, available: snapshot.phase == .readyToExport || snapshot.phase == .validating)
+    }
+
     public func reset() {
         snapshot = WorkflowSnapshot()
         disclosureAccepted = false
         instructions = ""
+        previewMode = .source
     }
 }
 
