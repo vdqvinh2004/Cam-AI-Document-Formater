@@ -18,14 +18,37 @@ public enum PreviewMode: String, CaseIterable, Sendable {
     case compare
 }
 
+public enum DocxPreviewStatus: String, Equatable, Sendable {
+    case rendered
+    case partial
+    case unavailable
+    case failed
+}
+
+public struct DocxPreviewBlock: Equatable, Sendable {
+    public let index: Int
+    public let text: String
+    public let isHeading: Bool
+
+    public init(index: Int, text: String, isHeading: Bool = false) {
+        self.index = index
+        self.text = text
+        self.isHeading = isHeading
+    }
+}
+
 public struct PreviewModel: Equatable, Sendable {
     public let available: Bool
     public let summary: String
     public let sourceText: String
     public let outputText: String
     public let diffs: [PreviewDiffRow]
+    public let docxStatus: DocxPreviewStatus?
+    public let docxBlocks: [DocxPreviewBlock]
+    public let featureWarnings: [String]
+    public let compareAvailable: Bool
 
-    public init(source: CanonicalDocument?, output: CanonicalDocument?, validation: ValidationResult?, available: Bool = true) {
+    public init(source: CanonicalDocument?, output: CanonicalDocument?, validation: ValidationResult?, available: Bool = true, docxStatus: DocxPreviewStatus? = nil, featureWarnings: [String] = []) {
         let sourceText = source?.blocks.map(
             { block in
                 switch block {
@@ -59,14 +82,22 @@ public struct PreviewModel: Equatable, Sendable {
         self.sourceText = sourceText
         self.outputText = outputText
         self.diffs = PreviewModel.diffLines(from: sourceText, to: outputText)
+        self.docxStatus = docxStatus
+        self.docxBlocks = docxStatus == nil ? [] : sourceText.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { DocxPreviewBlock(index: $0.offset, text: String($0.element)) }
+        self.featureWarnings = featureWarnings
+        self.compareAvailable = available && (validation?.status == .pass || validation == nil)
     }
 
-    public init(sourceText: String, outputText: String, available: Bool, summary: String) {
+    public init(sourceText: String, outputText: String, available: Bool, summary: String, docxStatus: DocxPreviewStatus? = nil, docxBlocks: [DocxPreviewBlock] = [], featureWarnings: [String] = []) {
         self.available = available
         self.summary = summary
         self.sourceText = sourceText
         self.outputText = outputText
         self.diffs = PreviewModel.diffLines(from: sourceText, to: outputText)
+        self.docxStatus = docxStatus
+        self.docxBlocks = docxBlocks
+        self.featureWarnings = featureWarnings
+        self.compareAvailable = available
     }
 
     private static func diffLines(from source: String, to output: String) -> [PreviewDiffRow] {

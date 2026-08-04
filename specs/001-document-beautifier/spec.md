@@ -125,6 +125,12 @@ unavailable messaging where rendering or comparison is unsafe.
 - **FR-019**: Each product MUST show a read-only preview of the loaded source document before generation when the format can be rendered safely.
 - **FR-020**: Each product MUST show a read-only preview of the formatted result after validation and MUST provide source, formatted, and compare views without enabling export unless validation passes.
 - **FR-021**: Compare view MUST identify presentation-only changes when reliable comparison is available, confirm preserved content, and show a clear preview-unavailable state for formats or features that cannot be rendered or compared safely.
+- **FR-022**: The browser product MUST be split into focused pages for workspace/upload, format setup, review/compare, settings, privacy, and not-found handling, with shared components for navigation, status, file intake, style selection, preview, comparison, and export actions.
+- **FR-023**: The browser product MUST use a maintained UI component library or design-system primitives where they improve accessibility and consistency, while retaining a restrained macOS-inspired visual language, typography, spacing, controls, and interaction behavior.
+- **FR-024**: Browser navigation MUST render privacy and unknown routes client-side or through deployment fallback configuration so valid links do not show a server 404.
+- **FR-025**: DOCX result preview MUST render the formatted output package from its actual bytes; it MUST NOT convert a DOCX result into plain text merely because a formatting operation is applied.
+- **FR-026**: Compare output MUST distinguish content preservation from presentation changes and MUST present only actionable, human-readable differences grouped by category, with unavailable states when evidence is insufficient.
+- **FR-027**: The browser refactor MUST preserve the existing privacy boundary: source files, output files, extracted content, prompts, and job history remain in memory only for the active workflow unless the user explicitly downloads an output.
 
 ### Key Entities
 
@@ -162,3 +168,5 @@ unavailable messaging where rendering or comparison is unsafe.
 - Content preservation means the source's textual and embedded informational content and supported structure remain equivalent; intentional presentation changes such as spacing, alignment, typography, and layout are allowed.
 - Password-protected, encrypted, corrupt, or otherwise unreadable files are rejected rather than partially processed.
 - The application uses standard macOS secure storage for the API key and does not store any other user profile or document data.
+- The browser UI library will be selected during planning based on bundle size, accessibility, keyboard behavior, tree-shaking, and compatibility with the existing Vite/React stack; it must not force a non-macOS visual theme.
+- PDF preview is optional and must not delay the primary web refactor or weaken truthful unavailable-state behavior.

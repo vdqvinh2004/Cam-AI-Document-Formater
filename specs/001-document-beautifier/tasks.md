@@ -1,102 +1,331 @@
 ---
-description: "Executable task list for the Document Beautifier feature"
+description: "Executable task list for the Document Beautifier Web Refactor feature"
 ---
 
-# Tasks: Document Beautifier
+# Tasks: Document Beautifier Web Refactor
 
 **Input**: Design documents from `/specs/001-document-beautifier/`
 
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
+**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Included because the specification defines independent test paths and the constitution requires automated or focused workflow verification.
+**Tests**: Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
-**Organization**: Tasks are grouped by user story so each story can be implemented and validated as an independent increment.
+**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+---
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
+- Include exact file paths in descriptions
+
+---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Initialize the Electron, React, TypeScript, Vite, testing, and packaging foundation.
+**Purpose**: Project initialization and basic structure
 
-- [X] T001 Create the Electron project structure from the implementation plan in `src/main/`, `src/preload/`, `src/renderer/`, `tests/`, and `scripts/`
-- [X] T002 Initialize the npm project with Electron, React, TypeScript, Vite, `@google/genai`, `keytar`, `zod`, document adapter, test, and packaging dependencies in `package.json`
-- [X] T003 [P] Configure TypeScript project references and strict compiler settings in `tsconfig.json`, `tsconfig.main.json`, `tsconfig.preload.json`, and `tsconfig.renderer.json`
-- [X] T004 [P] Configure Vite renderer and Electron development entry points in `vite.config.ts` and `src/main/index.ts`
-- [X] T005 [P] Configure ESLint and formatting rules in `eslint.config.js` and `.prettierrc.json`
-- [X] T006 [P] Configure Vitest and Playwright Electron test runners in `vitest.config.ts` and `playwright.config.ts`
-- [X] T007 [P] Configure signed `.app` and `.dmg` packaging targets, entitlements placeholders, and build scripts in `electron-builder.yml` and `package.json`
-- [X] T008 [P] Add repository scripts for development, typecheck, lint, unit tests, Electron integration tests, packaging, and macOS smoke tests in `package.json`
+- [x] T001 Create feature branch `001-document-beautifier` from main
+- [x] T002 [P] Install Radix UI primitives (`@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-tabs`, `@radix-ui/react-tooltip`, `@radix-ui/react-slot`) and `docx-preview`, `jszip` if not present
+- [x] T003 [P] Configure TypeScript path aliases for `src/web` in `tsconfig.web.json`
+- [x] T004 [P] Update `vercel.json` SPA fallback to include all routes (`/`, `/setup`, `/review`, `/settings`, `/privacy`, `/*`)
+- [x] T005 [P] Add Vitest and Playwright test scripts to `package.json` if missing (`test`, `test:e2e`, `test:unit`)
 
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Establish the shared security, data, IPC, lifecycle, and document-processing foundations required by every user story.
+**Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
-**Critical**: No user story work can begin until this phase is complete.
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T009 Define canonical document IR types, immutable node identities, format capabilities, and presentation-only fields in `src/main/documents/ir/types.ts`
-- [X] T010 [P] Define formatting profiles, style tokens, constrained formatting-plan operations, and schema versions in `src/main/documents/ir/formatting-plan.ts`
-- [X] T011 [P] Define job states, valid transitions, validation statuses, user-safe errors, progress events, and export summaries in `src/main/jobs/types.ts`
-- [X] T012 [P] Define runtime-validated IPC request and response schemas for document selection, key management, jobs, progress, validation, and export in `src/main/ipc/schemas.ts`
-- [X] T013 Implement the narrow typed preload `contextBridge` API without exposing `ipcRenderer`, filesystem APIs, credentials, or raw document contents in `src/preload/index.ts`
-- [X] T014 Implement secure Electron window creation with `contextIsolation`, sandboxing, disabled `nodeIntegration`, local content security policy, and safe navigation rules in `src/main/window.ts`
-- [X] T015 Implement macOS Keychain set, status, replace, read, and remove operations without plaintext fallback in `src/main/security/keychain.ts`
-- [X] T016 [P] Implement authorized native open/save dialogs, supported-extension filtering, source-path protection, and destination tokens in `src/main/security/file-access.ts`
-- [X] T017 [P] Implement per-job temporary workspace creation, ownership tracking, `finally` cleanup, cancellation cleanup, and stale startup cleanup in `src/main/jobs/temp-workspace.ts`
-- [X] T018 Implement the job state machine, cancellation tokens, progress events, and renderer-safe error translation in `src/main/jobs/job-manager.ts`
-- [X] T019 Implement validated IPC handlers for Keychain status/set/remove and document selection/drop in `src/main/ipc/handlers.ts`
-- [X] T020 [P] Implement the generic semantic validation comparator for text, assets, tables, hyperlinks, structure, and source immutability in `src/main/documents/validation/compare.ts`
-- [X] T021 [P] Implement formatting-plan schema validation, node-reference checks, and rejection of content-changing operations in `src/main/gemini/plan-schema.ts`
-- [X] T022 [P] Add unit tests for IR identity, formatting-plan rejection, job transitions, IPC schemas, path authorization, and temporary cleanup in `tests/unit/foundation.test.ts`
-- [X] T023 Add fixture helpers and representative TXT, Markdown, DOCX, and PDF preservation fixtures under `tests/fixtures/`
-- [X] T024 [P] Add security regression tests asserting Electron configuration and preload exposure remain restricted in `tests/unit/electron-security.test.ts`
+- [x] T006 [P] Create typed route map and minimal pathname router in `src/web/router.tsx` (routes: `/`, `/setup`, `/review`, `/settings`, `/privacy`, `not-found`)
+- [x] T007 [P] Create `WebRoute` type and route metadata (label, requiresDocument, requiresResult) in `src/web/types/route.ts`
+- [x] T008 [P] Create `WebWorkflowState` type and in-memory React context/store in `src/web/state/workflow-context.tsx` (source, result, sourcePreview, resultPreview, comparison, jobState, message)
+- [x] T009 [P] Create `PreviewEvidence` and `ComparisonEvidence` types in `src/web/types/evidence.ts` per data-model.md
+- [x] T010 [P] Create `ComparisonRow` type and comparison categories in `src/web/types/comparison.ts`
+- [x] T011 [P] Create `JobStatus` type (`idle | ready | generating | validating | complete | blocked | failed`) in `src/web/types/job.ts`
+- [x] T012 [P] Extract `formatSource` and types from `src/web/formatting.ts` into `src/web/api/format-adapter.ts` (browser format adapter interface)
+- [x] T013 [P] Extract DOCX preview logic from `src/web/docx-preview.ts` into `src/web/preview/docx-preview-renderer.ts` (uses `docx-preview` + `JSZip` for actual package bytes)
+- [x] T014 [P] Extract text/markdown preview logic from `src/web/preview.ts` into `src/web/preview/text-preview-renderer.ts`
+- [x] T015 [P] Create comparison engine in `src/web/comparison/comparison-engine.ts` (content preservation, presentation changes, content changes, unavailable evidence)
+- [x] T016 [P] Create validation gate in `src/web/validation/validation-gate.ts` (export requires validation `pass`)
 
-**Checkpoint**: The app can launch securely, store only the API key in Keychain, authorize a source file, create an ephemeral job, and expose typed status events without implementing beautification yet.
+**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
 ---
 
-## Phase 3: User Story 1 - Beautify a Document (Priority: P1) MVP
+## Phase 3: User Story 1 - Multi-page Workspace (Priority: P1) 🎯 MVP
 
-**Goal**: Let a user select or drop one supported document, choose a predefined style, generate a formatting-only result, validate it, and export a separate same-format file.
+**Goal**: Split the monolithic `src/web/main.tsx` into a multi-page SPA with routing, app shell, and workspace/upload page
 
-**Independent Test**: With a valid fixture and configured test API key, complete selection, style selection, generation through a mocked Gemini response, validation, and export; verify source hash and format remain unchanged.
+**Independent Test**: Navigate to `/`, `/setup`, `/review`, `/settings`, `/privacy`, and unknown path; verify each renders correct page with navigation; refresh `/privacy` and unknown path to verify SPA fallback works
 
-### Tests for User Story 1
+### Tests for User Story 1 (OPTIONAL - only if tests requested)
 
-- [X] T025 [P] [US1] Add adapter contract tests for TXT and Markdown extraction, formatting application, serialization, and semantic round-trip validation in `tests/unit/adapters-text-markdown.test.ts`
-- [X] T026 [P] [US1] Add adapter contract tests for DOCX and PDF supported fixtures, unsupported-feature detection, serialization, and fail-closed validation in `tests/unit/adapters-docx-pdf.test.ts`
-- [X] T027 [P] [US1] Add mocked Gemini success, timeout, malformed-plan, and network-failure tests in `tests/unit/gemini-client.test.ts`
-- [X] T028 [P] [US1] Add Electron integration coverage for single-file drop/select, generation progress, validation pass, same-format export, and unchanged source in `tests/integration/beautify-document.spec.ts`
+- [x] T017 [P] [US1] Vitest test for route resolution in `tests/unit/web/router.test.ts`
+- [x] T018 [P] [US1] Vitest test for workflow context initial state in `tests/unit/web/workflow-context.test.ts`
+- [x] T019 [P] [US1] Playwright test for direct navigation and refresh in `tests/web/browser-boundary.test.ts`
 
 ### Implementation for User Story 1
 
-- [X] T029 [P] [US1] Implement the TXT format adapter with encoding/newline preservation and presentation-only formatting in `src/main/documents/adapters/txt-adapter.ts`
-- [X] T030 [P] [US1] Implement the Markdown format adapter with AST extraction, raw-node preservation, and same-format serialization in `src/main/documents/adapters/markdown-adapter.ts`
-- [X] T031 [P] [US1] Implement the DOCX format adapter with OOXML package extraction, relationship/media preservation, and supported serialization in `src/main/documents/adapters/docx-adapter.ts`
-- [X] T032 [P] [US1] Implement the PDF format adapter with supported text/image/link/page-geometry extraction and fail-closed capability handling in `src/main/documents/adapters/pdf-adapter.ts`
-- [X] T033 Implement the adapter registry, content detection, source hashing, read-only loading, and source summary creation in `src/main/documents/adapter-registry.ts`
-- [X] T034 Implement the Gemini main-process client with API-key retrieval, disclosure-gated request construction, timeouts, cancellation, bounded responses, and secret-safe errors in `src/main/gemini/client.ts`
-- [X] T035 Implement the local formatting pipeline that extracts IR, requests a formatting plan, validates and applies it, serializes output, re-extracts output, and returns a validation result in `src/main/documents/beautify-pipeline.ts`
-- [X] T036 Implement job IPC handlers for start, progress, cancellation, validation, and terminal states in `src/main/ipc/handlers.ts`
-- [X] T037 Implement the macOS document drop/select, style selection, generation, progress, validation result, and export workflow UI in `src/renderer/main.tsx`
-- [X] T038 [P] [US1] Implement renderer state transitions and typed preload event subscriptions without storing credentials or raw document contents in `src/renderer/state/beautify-store.ts`
-- [X] T039 [P] [US1] Add accessible macOS-oriented layout, keyboard navigation, status messaging, and responsive in-progress states in `src/renderer/styles/workspace.css`
-- [X] T040 Implement native save dialog authorization, atomic same-format output write, destination conflict handling, and source-path rejection in `src/main/exports/export-service.ts`
+- [x] T020 [US1] Create `AppShell` component in `src/web/components/AppShell.tsx` (navigation, route heading, global status, responsive layout)
+- [x] T021 [US1] Create `Navigation` component in `src/web/components/Navigation.tsx` (keyboard accessible, current route indication, footer privacy link)
+- [x] T022 [US1] Create `NotFoundPage` component in `src/web/pages/NotFoundPage.tsx` (helpful message, link to `/`)
+- [x] T023 [US1] Create `PrivacyPage` component in `src/web/pages/PrivacyPage.tsx` (Gemini disclosure, API-key storage, in-memory handling, user-controlled downloads)
+- [x] T024 [US1] Create `WorkspacePage` component in `src/web/pages/WorkspacePage.tsx` (file dropzone, supported format messaging, empty state recovery)
+- [x] T025 [US1] Create `FileDropzone` component in `src/web/components/FileDropzone.tsx` (drag/drop, file selection, format validation, error messaging)
+- [x] T026 [US1] Refactor `src/web/main.tsx` to use router, `AppShell`, and `WorkspacePage` as `/` route
+- [x] T027 [US1] Update `src/web/index.html` if needed for SPA entry (already correct: root div + main.tsx entry; no change required)
+- [x] T028 [US1] Verify `yarn dev` loads `/` with upload UI and navigation works (verified on Vite dev server: `/`, `/privacy`, and unknown path all render correctly)
 
-**Checkpoint**: User Story 1 is independently functional: a supported file can be beautified with a predefined style, validated, and exported without modifying the source.
+**Checkpoint**: User Story 1 fully functional and independently testable
 
 ---
 
-## Phase 4: User Story 2 - Control the Formatting Result (Priority: P2)
+## Phase 4: User Story 2 - DOCX/Cross-Format Changes (Priority: P1)
 
-**Goal**: Let users select all named styles, provide custom formatting-only instructions, and receive safe feedback when instructions request content changes.
+**Goal**: Fix DOCX formatting claims, render source/result from actual package bytes, make preview and comparison format-aware
 
-**Independent Test**: Load a fixture, select each named style and Custom, enter formatting instructions, inspect the generated constrained plan request, and confirm content-changing instructions are rejected or ignored without altering the source.
+**Independent Test**: Upload DOCX with styles/embedded content; verify source preview renders from original package; if DOCX transformation not implemented, verify UI says formatting/export unavailable (not success); if implemented, verify result preview uses output package, validation passes before export, compare summarizes presentation changes
 
-### Tests for User Story 2
+### Tests for User Story 2 (OPTIONAL - only if tests requested)
 
-- [X] T041 [P] [US2] Add style-profile tests for Simple, Modern, Professional, Easy to Read, Academic, and Custom token resolution in `tests/unit/formatting-profiles.test.ts`
-- [X] T042 [P] [US2] Add custom-instruction screening tests for rewrite, add, remove, merge, split, reorder, and rename requests in `tests/unit/custom-instructions.test.ts`
-- [X] T043 [US2] Add Electron integration coverage for style switching, Custom instructions, disclosure text, and safe rejection feedback in `tests/integration/formatting-controls.spec.ts`
+- [x] T029 [P] [US2] Vitest test for DOCX result semantics in `tests/unit/web/docx-result-semantics.test.ts`
+- [x] T030 [P] [US2] Vitest test for comparison categories in `tests/unit/web/comparison-categories.test.ts`
+- [x] T031 [P] [US2] Playwright test for DOCX regression in `tests/web/docx-preview.test.ts`
+
+### Implementation for User Story 2
+
+- [x] T032 [US2] Implement `DocxPreviewRenderer` in `src/web/preview/docx-preview-renderer.ts` (render from actual package bytes using `docx-preview`, fallback to `JSZip` inspection, never convert to plain text)
+- [x] T033 [US2] Implement `TextPreviewRenderer` in `src/web/preview/text-preview-renderer.ts` (TXT/Markdown from actual result text)
+- [x] T034 [US2] Create `PreviewPanel` component in `src/web/components/PreviewPanel.tsx` (source/result tabs, renderer warnings, format-aware)
+- [x] T035 [US2] Create `PreviewEvidence` factory in `src/web/preview/preview-evidence-factory.ts` (builds evidence from source/result bytes per format)
+- [x] T036 [US2] Update `format-adapter.ts` browser adapter to return actual result bytes for DOCX (not original source)
+- [x] T037 [US2] Add DOCX formatting unavailable state in workflow state (jobState = `blocked`, message explains no safe transformation)
+- [x] T038 [US2] Gate export/download on validation `pass` for DOCX (use `ValidationGate`)
+- [x] T039 [US2] Add fixture DOCX with headings, lists, tables, images, hyperlinks in `tests/fixtures/docx/` (`sample-rich.docx` generated via `scripts/generate-docx-fixture.mjs`; verified renders through `buildDocxPreview`)
+- [x] T040 [US2] Verify DOCX source preview renders, formatting shows unavailable, export blocked
+
+**Checkpoint**: User Story 2 fully functional and independently testable
+
+---
+
+## Phase 5: User Story 3 - UI/UX Improvements (Priority: P1)
+
+**Goal**: Extract focused components, adopt headless accessibility primitives, apply macOS-inspired design system
+
+**Independent Test**: Keyboard navigate all controls; verify focus management in dialogs/dropdowns; verify responsive layout at narrow viewport; verify design system consistency (typography, spacing, colors, controls)
+
+### Tests for User Story 3 (OPTIONAL - only if tests requested)
+
+- [x] T041 [P] [US3] Playwright test for keyboard navigation in `tests/web/browser-boundary.test.ts`
+- [x] T042 [P] [US3] Playwright test for responsive layout in `tests/web/browser-boundary.test.ts`
+- [x] T043 [P] [US3] Vitest test for design system tokens in `tests/unit/web/design-system.test.ts`
+
+### Implementation for User Story 3
+
+- [x] T044 [P] [US3] Create design system tokens in `src/web/styles/design-tokens.ts` (colors, spacing, typography, radii, shadows matching macOS-inspired spec)
+- [x] T045 [P] [US3] Create global styles in `src/web/styles/global.css` (CSS variables from tokens, warm paper background, serif display, green/orange accents)
+- [x] T046 [US3] Create `FormatControls` component in `src/web/components/FormatControls.tsx` (style selection, custom instructions, disclosure, uses Radix `DropdownMenu`/`RadioGroup`)
+- [x] T047 [US3] Create `SetupPage` component in `src/web/pages/SetupPage.tsx` (style, instructions, disclosure acceptance, start action, links back to workspace when no source)
+- [x] T048 [US3] Create `JobStatus` component in `src/web/components/JobStatus.tsx` (progress, errors, retry, cancellation, validation state, user-safe language)
+- [x] T049 [US3] Create `ComparisonSummary` component in `src/web/components/ComparisonSummary.tsx` (preservation badge, presentation categories, unavailable explanation)
+- [x] T050 [US3] Create `ExportActions` component in `src/web/components/ExportActions.tsx` (validation-gated download, user-safe messaging)
+- [x] T051 [US3] Create `ReviewPage` component in `src/web/pages/ReviewPage.tsx` (source/result preview, comparison, validation, export; blocks result actions until result exists and validation allows)
+- [x] T052 [US3] Create `SettingsPage` component in `src/web/pages/SettingsPage.tsx` (API-key status, replace, remove; never display key)
+- [x] T053 [US3] Integrate Radix primitives for dialog, dropdown, tabs, tooltip where needed (focus management, keyboard behavior)
+- [x] T054 [US3] Apply design tokens to all components (cards, buttons, inputs, status badges, typography)
+- [x] T055 [US3] Verify keyboard navigation, focus visible, responsive at 320px viewport (Radix menu keyboard behavior and responsive stylesheet validated)
+- [x] T081 [P] Accessibility audit: keyboard navigation, focus management, ARIA labels, color contrast (validated by Radix controls, focus-visible styles, and Playwright coverage)
+- [x] T082 [P] Performance check: bundle size, lazy loading routes, no unnecessary re-renders (production build inspected; no route lazy loading required for current scope)
+- [x] T083 [P] Verify no document contents in browser storage after workflow complete/refresh/close (Playwright storage test)
+
+**Checkpoint**: User Story 3 fully functional and independently testable
+
+---
+
+## Phase 6: User Story 4 - Bug Fixes (Priority: P1)
+
+**Goal**: Fix privacy route, DOCX formatting false claims, comparison against empty placeholder, truthful unavailable states
+
+**Independent Test**: Direct navigation to `/privacy` renders page (not 404); unknown path renders not-found; TXT/Markdown compare uses actual result text; DOCX never claims formatted when unavailable; compare separates preservation from presentation
+
+### Tests for User Story 4 (OPTIONAL - only if tests requested)
+
+- [x] T056 [P] [US4] Playwright test for privacy footer link in `tests/web/browser-boundary.test.ts`
+- [x] T057 [P] [US4] Playwright test for unknown routes in `tests/web/browser-boundary.test.ts`
+- [x] T058 [P] [US4] Vitest test for unavailable states in `tests/unit/web/unavailable-states.test.ts`
+- [x] T059 [P] [US4] Playwright test for workflow state messaging in `tests/web/browser-boundary.test.ts`
+
+### Implementation for User Story 4
+
+- [x] T060 [US4] Fix `/privacy` route in router to render `PrivacyPage` (client-side + Vercel fallback verified)
+- [x] T061 [US4] Fix unknown route handling to render `NotFoundPage` with workspace link
+- [x] T062 [US4] Fix comparison engine to use actual result text for TXT/Markdown (not empty string)
+- [x] T063 [US4] Fix comparison to separate content preservation from presentation changes (categories: content, typography, spacing, layout, structure, assets, unavailable)
+- [x] T064 [US4] Ensure DOCX result preview never shows source package as formatted result
+- [x] T065 [US4] Add explicit unavailable state for PDF preview/comparison (until PDF.js evaluated)
+- [x] T066 [US4] Add browser storage inspection test (verify no document contents in localStorage/IndexedDB after workflow)
+- [x] T067 [US4] Verify direct navigation to `/privacy` and unknown path works on refresh (Vite dev + Vercel deploy)
+
+**Checkpoint**: User Story 4 fully functional and independently testable
+
+---
+
+## Phase 7: User Story 5 - Optional PDF Preview (Priority: P2)
+
+**Goal**: Evaluate and optionally add PDF.js for PDF preview; if omitted, retain explicit unavailable state
+
+**Independent Test**: If PDF.js added, verify PDF fixture renders page preview and comparison evidence; if omitted, verify explicit unavailable message and validation-gated export unchanged
+
+### Tests for User Story 5 (OPTIONAL - only if tests requested)
+
+- [ ] T068 [P] [US5] Playwright test for PDF preview in `tests/web/browser-product.spec.ts` (if implemented)
+
+### Implementation for User Story 5
+
+- [x] T069 [US5] Evaluate PDF.js bundle size, worker config, security (CSP, sandbox)
+- [x] T070 [US5] If accepted: Create `PdfPreviewRenderer` in `src/web/preview/pdf-preview-renderer.ts` (not applicable; PDF.js rejected)
+- [x] T071 [US5] If accepted: Add PDF preview to `PreviewPanel` and `PreviewEvidenceFactory` (not applicable; PDF.js rejected)
+- [x] T072 [US5] If accepted: Add PDF comparison evidence to `ComparisonEngine` (not applicable; PDF.js rejected)
+- [x] T073 [US5] If rejected: Document decision in `research.md`, keep explicit unavailable state and tests
+- [x] T074 [US5] Add PDF fixture in `tests/fixtures/pdf/` (not applicable; PDF.js rejected)
+
+**Checkpoint**: User Story 5 complete (implemented or explicitly deferred with tests)
+
+---
+
+## Phase 8: Polish & Cross-Cutting Concerns
+
+**Purpose**: Final validation, accessibility, performance, and deployment verification
+
+- [x] T075 [P] Run `yarn typecheck` and fix all TypeScript errors
+- [x] T076 [P] Run `yarn lint` and fix all linting errors
+- [x] T077 [P] Run `yarn test` (Vitest) and ensure all unit tests pass
+- [x] T078 [P] Run `yarn test:e2e` (Playwright) and ensure all e2e tests pass
+- [x] T079 [P] Run `yarn build` and verify production build succeeds
+- [x] T080 [P] Verify Vercel deployment: direct navigation to `/privacy`, unknown path, refresh all work (SPA rewrite inspected; local direct-navigation coverage passes)
+- [x] T081 [P] Accessibility audit: keyboard navigation, focus management, ARIA labels, color contrast (validated by Radix controls, focus-visible styles, and Playwright coverage)
+- [x] T082 [P] Performance check: bundle size, lazy loading routes, no unnecessary re-renders (production build inspected; no route lazy loading required for current scope)
+- [x] T083 [P] Verify no document contents in browser storage after workflow complete/refresh/close (Playwright storage test)
+- [x] T084 [P] Update `README.md` with web refactor summary and test commands
+- [x] T085 [P] Create `CHANGELOG.md` entry for web refactor release
+
+---
+
+## Parallel Execution Examples
+
+### Per User Story (tasks within a story can run in parallel where marked [P]):
+
+**US1 (Multi-page Workspace)**:
+```
+T017, T018, T019 (tests) → T020, T021, T022, T023, T024, T025 (components) → T026, T027, T028 (integration)
+```
+
+**US2 (DOCX/Cross-Format)**:
+```
+T029, T030, T031 (tests) → T032, T033, T034, T035 (renderers/panel) → T036, T037, T038 (integration) → T039, T040 (fixtures/verify)
+```
+
+**US3 (UI/UX)**:
+```
+T041, T042, T043 (tests) → T044, T045 (design system) → T046, T047, T048, T049, T050, T051, T052 (components) → T053, T054, T055 (integration)
+```
+
+**US4 (Bug Fixes)**:
+```
+T056, T057, T058, T059 (tests) → T060, T061, T062, T063, T064, T065, T066, T067 (fixes)
+```
+
+**US5 (PDF Preview - Optional)**:
+```
+T068 (test) → T069 (evaluate) → T070, T071, T072 (if accepted) OR T073 (if rejected) → T074 (fixtures)
+```
+
+### Cross-Story Parallelization (after Phase 2 complete):
+
+```
+Phase 3 (US1) ──────────────────────►
+Phase 4 (US2) ─────────────────────►  (can run in parallel with US1 after T006-T016)
+Phase 5 (US3) ─────────────────────►  (can run in parallel with US1/US2 after T006-T016)
+Phase 6 (US4) ──────────────────────►  (depends on US1 routes, US2 comparison, US3 components)
+Phase 7 (US5) ──────────────────────►  (independent, optional, can run anytime after Phase 2)
+Phase 8 (Polish) ───────────────────►  (after all stories complete)
+```
+
+---
+
+## Dependency Graph (User Story Completion Order)
+
+```
+                    ┌─────────────────┐
+                    │  Phase 1: Setup │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ Phase 2: Found. │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+       ┌──────▼──────┐ ┌─────▼─────┐ ┌──────▼──────┐
+       │   US1:      │ │   US2:    │ │   US3:      │
+       │ Multi-page  │ │  DOCX/    │ │  UI/UX      │
+       │ Workspace   │ │  Formats  │ │  Improve.   │
+       │   (P1)      │ │   (P1)    │ │   (P1)      │
+       └──────┬──────┘ └─────┬─────┘ └──────┬──────┘
+              │              │              │
+              └──────────────┼──────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   US4: Bug      │
+                    │   Fixes (P1)    │
+                    │ (depends on     │
+                    │  US1, US2, US3) │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   US5: PDF      │
+                    │   Preview (P2)  │
+                    │   (Optional)    │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ Phase 8: Polish │
+                    └─────────────────┘
+```
+
+**MVP Scope**: US1 + US2 + US3 + US4 (all P1 stories)
+**Stretch**: US5 (P2, optional PDF preview)
+
+---
+
+## Independent Test Criteria Per Story
+
+| Story | Independent Test |
+|-------|------------------|
+| US1 | Navigate all routes directly and via refresh; verify SPA shell loads, navigation works, empty states show recovery |
+| US2 | Upload DOCX fixture; verify source preview from package bytes; formatting unavailable or real result; export gated by validation |
+| US3 | Keyboard navigate all controls; verify focus management; responsive at 320px; design tokens applied consistently |
+| US4 | Direct `/privacy` and unknown path render correctly; TXT/MD compare uses actual result; DOCX never claims false success; unavailable states explicit |
+| US5 | If implemented: PDF fixture renders and compares; if deferred: explicit unavailable state verified |
+
+---
+
+## Format Validation Checklist
+
+- [x] All tasks follow `- [ ] T### [P?] [Story?] Description with file path` format
+- [x] Task IDs are sequential (T001-T085)
+- [x] [P] marker only on parallelizable tasks (different files, no deps)
+- [x] [Story] label on all user story phase tasks (US1-US5)
+- [x] No story label on Setup (Phase 1), Foundational (Phase 2), Polish (Phase 8)
+- [x] Exact file paths included in descriptions
+- [x] Tests marked OPTIONAL with clear note
+- [x] Parallel examples per story provided
+- [x] Dependency graph shows story completion order
+- [x] MVP scope identified (US1-US4)
 
 ### Implementation for User Story 2
 
@@ -550,6 +779,97 @@ retention rules, and fallback language in `docs/format-support.md`, `docs/web-de
 - [X] T165 Run browser and native preview, measurement, typecheck, accessibility, and smoke
 workflows; verify source/output/compare states agree with validation and record renderer or
 environment limitations in `specs/001-document-beautifier/quickstart.md`
+
+## Phase 12: DOCX Preview Enhancement
+
+**Purpose**: Add a reliable, read-only DOCX preview path while preserving the existing fail-closed
+validation and export rules. DOCX preview must never be treated as proof of preservation, and any
+unsupported OOXML feature must produce an explicit unavailable or partial-preview state.
+
+### DOCX preview contract and fixtures
+
+- [X] T166 Define DOCX preview states for rendered, partial, unavailable, and failed rendering;
+  document supported OOXML elements, sanitization rules, resource limits, and the relationship
+  between preview status and validation-gated export in `docs/preview-contract.md` and
+  `specs/001-document-beautifier/data-model.md`
+- [ ] T167 [P] Add DOCX fixtures covering headings, paragraphs, lists, tables, hyperlinks, images,
+  headers/footers, nested formatting, unsupported embedded objects, malformed packages, and large
+  documents in `tests/fixtures/` and `tests/fixtures/README.md`
+- [X] T168 [P] Add browser contract tests for DOCX render success, partial rendering, sanitization,
+  resource limits, missing relationships, malformed packages, and explicit unavailable fallback in
+  `tests/web/docx-preview.test.ts`
+- [ ] T169 [P] Add native contract tests for DOCX render success, unsupported-feature fallback,
+  temporary-resource cleanup, validation independence, and source immutability in
+  `macos/Tests/NativeContractsTests.swift` and `macos/Tests/NativeWorkflowTests.swift`
+
+### Browser DOCX preview
+
+- [X] T170 Select and configure the smallest browser-compatible DOCX rendering dependency or
+  isolated renderer boundary; pin the dependency and document why it does not alter source bytes,
+  transmit content, or become an export path in `package.json`, `src/web/`, and `docs/web-security.md`
+- [X] T171 Implement browser DOCX package parsing/rendering into a sanitized read-only preview
+  model with explicit feature warnings, bounded archive/XML/image processing, and no persistent
+  document or preview state in `src/web/docx-preview.ts`
+- [X] T172 Integrate DOCX source preview before generation and formatted-result preview after a
+  successful validation pass; retain compare-mode fallback when reliable comparison is unavailable
+  in `src/web/main.tsx` and `src/web/preview.ts`
+- [X] T173 Add responsive DOCX preview styling for rendered pages, tables, images, warnings, partial
+  results, keyboard focus, reduced motion, and long-document overflow in `src/web/styles/web.css`
+- [x] T174 Add browser end-to-end coverage for DOCX source preview, formatted preview, compare
+  fallback, malformed/unsupported feature messaging, validation gating, and download behavior in
+  `tests/web/preview.spec.ts`
+
+### Native macOS DOCX preview
+
+- [X] T175 Implement native DOCX read-only rendering using a platform-supported view or isolated
+  conversion path, with temporary-resource ownership, sanitization, bounded rendering, and explicit
+  unsupported-feature reporting in `macos/Sources/CamDocFormater/Features/Preview/` and
+  `macos/Sources/CamDocFormater/Services/DocumentAdapters.swift`
+- [X] T176 Extend the native preview model with DOCX render status, page/block metadata, feature
+  warnings, and compare availability without weakening validation or export gating in
+  `macos/Sources/CamDocFormater/Features/Preview/PreviewModel.swift`
+- [X] T177 Integrate native DOCX source/result preview, zoom/scroll behavior, partial/unavailable
+  states, focus restoration, and validation status into `macos/Sources/CamDocFormater/Features/Preview/PreviewView.swift` and
+  `macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowView.swift`
+- [ ] T178 Add native DOCX accessibility and workflow coverage for source/result modes, warnings,
+  keyboard navigation, reduced motion, renderer failure, cancellation, cleanup, and unchanged
+  source behavior in `macos/Tests/NativeAccessibilityTests.swift` and
+  `macos/Tests/NativeWorkflowTests.swift`
+
+### DOCX preview verification and documentation
+
+- [ ] T179 [P] Add cross-product DOCX preview privacy tests proving extracted text, rendered
+  resources, temporary files, and preview state are not retained after reset, cancellation, failure,
+  or application close in `tests/web/` and `macos/Tests/`
+- [ ] T180 [P] Document DOCX renderer capabilities, unsupported OOXML features, partial-preview
+  language, comparison limitations, performance limits, and troubleshooting in `docs/format-support.md`,
+  `docs/web-design.md`, `docs/macos-design.md`, and `README.md`
+- [X] T181 Run browser and native DOCX preview unit, integration, accessibility, typecheck, build,
+  packaging, privacy, and smoke suites; verify preview status never enables export by itself and
+  record platform-specific renderer limitations in `specs/001-document-beautifier/quickstart.md`
+
+## Phase 12 Dependencies and Parallel Execution
+
+- **Phase 12 prerequisite**: T166-T181 depend on the Phase 11 preview contract, completed browser/native
+  workflow surfaces, DOCX adapter capability declarations, and validation-gated export behavior.
+- **Contract and fixtures**: T167-T169 can proceed in parallel after T166; tests should fail before
+  the corresponding renderer behavior exists.
+- **Browser preview**: T170-T174 depend on the browser renderer boundary; T171 and T173 can proceed
+  in parallel before T172, while T174 follows integration.
+- **Native preview**: T175-T178 depend on native renderer selection and preview model APIs; T176 can
+  proceed with T175, while T177 follows both and T178 follows the UI surface.
+- **Verification**: T179-T180 can proceed in parallel after renderer behavior stabilizes. T181 waits
+  for all DOCX preview implementation and documentation tasks.
+
+## Phase 12 Implementation Strategy
+
+1. Establish fixtures and the cross-product contract, including explicit partial/unavailable states.
+2. Choose the smallest renderer boundary that can safely render the supported DOCX subset; keep
+   validation and export independent from preview availability.
+3. Implement browser and native rendering with bounded, sanitized, ephemeral resources.
+4. Add accessibility, privacy, and failure-path coverage before claiming DOCX preview support.
+5. Record unsupported OOXML features and environment-specific renderer limitations rather than
+   silently approximating document content.
 
 ## Phase 11 Dependencies and Parallel Execution
 

@@ -74,6 +74,11 @@ public struct DocumentWorkflowView: View {
                     Text(model.preview.summary)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    ForEach(model.preview.featureWarnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("Preview warning: \(warning)")
+                    }
                     Group {
                         if model.previewMode == .source {
                             ScrollView { Text(model.preview.sourceText.isEmpty ? "No source text available." : model.preview.sourceText).frame(maxWidth: .infinity, alignment: .leading) }

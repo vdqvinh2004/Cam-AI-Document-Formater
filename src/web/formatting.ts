@@ -1,4 +1,7 @@
 import { resolveBrowserStyle, type BrowserStyleName, type BrowserStyleTokens } from './style-profiles.js';
+import { formatDocx, extractDocxText } from './docx-formatting.js';
+
+export { extractDocxText } from './docx-formatting.js';
 
 export interface BrowserSource {
   file: File;
@@ -55,7 +58,7 @@ export async function readSource(file: File): Promise<BrowserSource> {
 
 export async function requestFormattingPlan(source: BrowserSource, style: BrowserStyleName, instructions: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<{ plan: BrowserFormattingPlan; warnings: string[] }> {
   if (!apiKey) throw new Error('Configure a Gemini API key before formatting.');
-  const warnings = source.format === 'txt' || source.format === 'markdown' ? [] : ['Preview is unavailable for this format; the original file will be preserved.'];
+  const warnings = source.format === 'txt' || source.format === 'markdown' || source.format === 'docx' ? [] : ['Preview is unavailable for this format; the original file will be preserved.'];
   const tokens = resolveBrowserStyle(style);
   const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
@@ -73,11 +76,31 @@ export async function requestFormattingPlan(source: BrowserSource, style: Browse
 }
 
 export async function formatSource(source: BrowserSource, plan: BrowserFormattingPlan): Promise<BrowserResult> {
+  if (source.format === 'docx') {
+    try {
+      const bytes = await source.file.arrayBuffer();
+      const blob = await formatDocx(bytes, plan);
+      return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: true, warnings: [] };
+    } catch (error) {
+      // If DOCX formatting fails, return the original file preserved
+      return {
+        filename: source.file.name,
+        blob: source.file,
+        format: source.format,
+        sourceHash: source.sourceHash,
+        contentPreserved: true,
+        previewAvailable: false,
+        warnings: [`DOCX formatting failed: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      };
+    }
+  }
+
   const warnings = source.format === 'markdown'
     ? []
     : ['This format cannot store presentation changes in the browser; the original file was preserved.'];
-  const text = source.format === 'markdown' ? applyMarkdownPlan(source.text, plan) : await source.file.text();
-  const blob = new Blob([text], { type: source.file.type || 'application/octet-stream' });
+  const blob = source.format === 'markdown'
+    ? new Blob([applyMarkdownPlan(source.text, plan)], { type: source.file.type || 'text/markdown' })
+    : source.file;
   return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: source.format === 'txt' || source.format === 'markdown', warnings };
 }
 

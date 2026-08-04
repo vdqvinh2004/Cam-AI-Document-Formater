@@ -92,7 +92,12 @@ public final class DocumentWorkflowViewModel {
     }
 
     public var preview: PreviewModel {
-        PreviewModel(source: snapshot.source, output: snapshot.source != nil ? (snapshot.validation?.status == .pass ? snapshot.source : snapshot.source) : nil, validation: snapshot.validation, available: snapshot.phase == .readyToExport || snapshot.phase == .validating)
+        let available = snapshot.phase == .readyToExport || snapshot.phase == .validating || snapshot.phase == .awaitingConfirmation
+        guard snapshot.source?.format == .docx, let sourceData = snapshot.sourceData else {
+            return PreviewModel(source: snapshot.source, output: snapshot.validation?.status == .pass ? snapshot.source : nil, validation: snapshot.validation, available: available)
+        }
+        let rendered = DocxPreviewRenderer().render(data: sourceData)
+        return PreviewModel(sourceText: rendered.sourceText, outputText: snapshot.validation?.status == .pass ? rendered.outputText : "", available: rendered.available && (snapshot.validation?.status != .fail), summary: snapshot.validation?.status == .pass ? rendered.summary : "DOCX preview does not replace validation.", docxStatus: rendered.docxStatus, docxBlocks: rendered.docxBlocks, featureWarnings: rendered.featureWarnings)
     }
 
     public func reset() {

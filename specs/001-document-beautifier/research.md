@@ -1,99 +1,67 @@
 # Research: Document Beautifier
 
-**Date**: 2026-07-23
+**Date**: 2026-07-29
 **Feature**: [spec.md](spec.md)
 
-## Decision: Use a canonical document IR and format adapters
+## Decision: Use a focused internal page/component architecture with a minimal pathname router
 
-**Rationale**: TXT, Markdown, DOCX, and PDF have incompatible semantics and fidelity limits. A canonical representation keeps content identity separate from presentation metadata, lets validation use one comparator, and lets each adapter fail closed when it cannot preserve a construct.
-
-**Alternatives considered**:
-- Sending a complete formatted file to Gemini: rejected because a model can rewrite, omit, reorder, or invent content.
-- Converting every format to HTML: rejected as the sole representation because DOCX relationships, PDF geometry, assets, and document structure need explicit metadata.
-- Editing each format independently: rejected because formatting and validation behavior would diverge.
-
-## Decision: Gemini returns a constrained formatting plan, never document content
-
-**Rationale**: The main process can validate a JSON-schema-constrained plan containing only presentation operations referencing existing node IDs. Local code remains responsible for content, serialization, and preservation enforcement.
+**Rationale**: The browser product is a Vite/React SPA with a small number of static workflow pages and no existing routing dependency. A typed route map and shared in-memory workflow context satisfy navigation, privacy, and not-found requirements with less bundle and maintenance cost than a full routing framework. The route layer must render `/`, `/setup`, `/review`, `/settings`, `/privacy`, and a not-found page, while Vercel's existing SPA rewrite remains deployment support.
 
 **Alternatives considered**:
-- Model-generated Markdown/DOCX/PDF: rejected for loss and content-modification risk.
-- Model-generated free-form style instructions: rejected because operations cannot be deterministically checked.
+- React Router: conventional but adds dependency and abstraction not required by the current route set.
+- TanStack Router: strong type safety but excessive for this small static route graph.
+- Pathname conditionals inside one component: rejected because it preserves the current monolith and makes route accessibility and testing harder.
 
-## Decision: Keep browser and native privileged work in separate boundaries
+## Decision: Extract product components while keeping document state ephemeral
 
-**Rationale**: Browser code owns browser file inputs, in-memory processing, browser storage, and
-downloads. Native code owns filesystem access, document processing, temporary workspaces, Keychain
-access, and Gemini requests. The native product uses SwiftUI MVVM with Observation, Actors for
-isolated jobs, `URLSession` for networking, Swift Package Manager, and native system dialogs.
+**Rationale**: Split the current `main.tsx` into route pages and focused components for app shell/navigation, upload, formatting controls, status, preview, comparison, and export. Share one in-memory workflow store/context between pages. Refresh loses document state by design; pages must show a clear empty-state recovery action rather than persisting document contents.
 
 **Alternatives considered**:
-- Keeping Electron as native shell: rejected because it duplicates browser UI and weakens native
-	macOS integration compared with SwiftUI.
-- Sharing privileged code between browser and native products: rejected because browser and native
-	filesystem, credential, storage, and download boundaries differ.
+- Persisting source/result state in localStorage or IndexedDB: rejected by the no-document-retention requirement.
+- Introducing a global state framework: rejected until the in-memory context becomes insufficient.
 
-## Decision: Store only the Gemini API key in platform-appropriate secure storage
+## Decision: Use selective headless accessible UI primitives, styled by the existing macOS-inspired design system
 
-**Rationale**: Native Keychain provides set, replace, read, and remove without plaintext fallback.
-The browser product uses its documented origin-scoped storage policy. The key is read only when a
-job starts, held in memory for the shortest practical duration, and never logged.
+**Rationale**: A headless library supplies difficult keyboard, focus, dialog, tab, and disclosure behavior without imposing a competing visual theme. Radix UI primitives are recommended for the small set of required interactions; product components retain the warm paper, restrained cards, typography, spacing, and control styling already aligned with macOS conventions. Dependency adoption should be limited to primitives with a concrete accessibility need.
 
 **Alternatives considered**:
-- Native encrypted settings file: viable, but Keychain is clearer for this credential-only requirement.
-- Persisting the browser key outside origin-scoped storage: rejected by browser privacy boundaries.
-- Plaintext settings storage: rejected by the privacy and security requirements.
+- Full visual frameworks such as MUI, Ant Design, or Chakra: rejected because they impose a different visual language and increase bundle/runtime surface.
+- Ariakit or React Aria Components: viable alternatives; choose one after validating package weight and integration effort, but do not mix libraries unnecessarily.
+- Custom keyboard/focus behavior for every widget: rejected because it increases accessibility regression risk.
 
-## Decision: Process documents in per-job ephemeral workspaces
+## Decision: Treat DOCX formatting capability and DOCX preview capability as separate contracts
 
-**Rationale**: Prefer in-memory buffers; when converters require files, create a random application-owned temporary directory with restrictive permissions and delete it in `finally` blocks. Startup recovery removes only stale directories with the application prefix.
-
-**Alternatives considered**:
-- Persisting extracted IR or generated files in `userData`: rejected by the no-retention requirement.
-- Untracked system temp files: rejected because cleanup cannot be audited or recovered.
-
-## Decision: Validate semantic round-trip, not bytes
-
-**Rationale**: Beautification intentionally changes file bytes. Re-extracting the output and comparing canonical text, assets, tables, links, and structure allows presentation changes while blocking content loss or unsupported structure changes. Export is allowed only for a complete `pass`.
+**Rationale**: The current browser implementation returns the original DOCX blob from `formatSource`, so it cannot produce a changed DOCX. The current `docx-preview` fallback extracts text and cannot prove rich formatting. The refactor must render source/result from actual package bytes and truthfully distinguish preview-only behavior from real formatting/export. A DOCX output may only be called formatted after a safe OOXML package transformation and semantic round-trip validation; otherwise export remains unavailable with an actionable explanation.
 
 **Alternatives considered**:
-- Byte equality: incompatible with formatting changes.
-- Plain-text comparison: misses images, tables, hyperlinks, and structure.
-- Screenshot comparison: useful as a supplemental rendering check, not a preservation guarantee.
+- Rebuild DOCX from extracted text: rejected because it loses relationships, media, tables, hyperlinks, numbering, and unsupported OOXML parts.
+- Claim the unchanged source blob as a formatted result: rejected as misleading and the direct cause of the reported bug.
+- Use screenshot comparison as preservation proof: rejected; useful only as supplemental presentation evidence.
 
-## Decision: Use fail-closed capability policies per format
+## Decision: Model comparison as content evidence plus presentation summary
 
-**Rationale**: Markdown, DOCX, and PDF cannot represent every feature of one another. Each adapter declares supported constructs and reports unsupported or inconclusive validation rather than silently dropping content.
-
-**Format approach**:
-- TXT: UTF-8 read/write with explicit newline and whitespace rules.
-- Markdown: `unified`/`remark` AST with preservation of raw links, reference definitions, code blocks, and supported extensions.
-- DOCX: inspect OOXML package parts with `JSZip` and XML processing; preserve relationships and media instead of reconstructing only high-level text.
-- PDF: inspect with `pdfjs-dist` and generate supported layouts with `pdf-lib`; reject encrypted, ambiguous, or unsupported constructs.
-
-## Decision: Package products with platform-native tooling
-
-**Rationale**: The browser product deploys as a Vite output to Vercel. The native product uses
-Swift Package Manager and Xcode archive/export workflows for signed `.app` and `.dmg` releases,
-Developer ID signing, hardened runtime, notarization, and stapling.
+**Rationale**: The current compare input passes an empty output string for TXT/Markdown, and the generic line diff cannot explain formatting. Pass actual result text, compare semantic content separately from presentation metadata, and return explicit categories: content preserved, presentation changed, content changed, and unavailable. Render concise human-readable summaries with affected sections/format features rather than raw XML or meaningless line noise.
 
 **Alternatives considered**:
-- electron-builder: rejected because Electron is removed from native product scope.
-- Electron Forge: rejected for same reason.
+- Generic line diff for every format: rejected because formatting markup and package XML produce noisy, misleading output.
+- Screenshot-only diff: rejected because it cannot prove semantic content preservation.
+- No comparison: rejected because users need to understand the result before export.
 
-## Decision: Test from pure logic through packaged app
+## Decision: Keep PDF preview optional and fail truthful
 
-**Rationale**: Preservation and security risks cross product and format boundaries. Use Vitest and
-browser integration tests for web contracts, XCTest and Swift Testing for native contracts, fixture
-round-trips for each format, and packaged native macOS smoke tests.
+**Rationale**: PDF preview can be added with a dedicated local renderer such as PDF.js only if bundle size, worker configuration, and security behavior are acceptable. It must not block the primary page refactor, DOCX fix, or user-friendly compare work. Until implemented and tested, PDF receives an explicit preview-unavailable state and remains governed by validation/export capability.
 
-**Required cases**: source hash unchanged, rejected content-changing plans, failed/inconclusive
-validation blocks export, cancellation cleanup, destination conflicts, Keychain lifecycle, browser
-bundle boundary checks, native security settings, and startup stale-workspace cleanup.
+**Evaluation outcome (2026-07-29)**: Rejected for this refactor. PDF.js would add a worker/runtime bundle and CSP configuration that are not justified while PDF formatting is not implemented. The browser currently preserves PDF bytes, reports preview unavailable and validation inconclusive, and blocks export. No PDF.js dependency or fixture is added; this fail-closed behavior is covered by the preview/comparison contracts.
 
-## Open risks and bounded assumptions
 
-- PDF reading order, annotations, forms, encryption, and fonts require an explicit support matrix; unsupported cases fail closed.
-- DOCX extension parts, tracked changes, comments, footnotes, macros, and embedded objects require fixture coverage before being marked supported.
-- App Sandbox entitlements and security-scoped bookmarks require native fixture testing before release claims. Swift package adapters and file grants must be tested in signed builds.
-- Temporary cleanup cannot prevent OS swap, crash dumps, backups, or third-party converter caches; the application must avoid logs and persistent caches containing document content.
+**Alternatives considered**:
+- Extract PDF text and display it as a preview: rejected when it would imply faithful page/layout rendering.
+- Add PDF.js before stabilizing current workflow: rejected because it expands scope and can delay core bug fixes.
+
+## Decision: Provide explicit privacy and not-found routes plus SPA fallback verification
+
+**Rationale**: `/privacy` currently has an absolute footer link but no route/page. Add a real privacy page and client-side fallback, then test direct navigation and refresh through the Vite/Vercel deployment path. Unknown paths render a helpful not-found page. Keep the rewrite in `vercel.json` as defense in depth and verify the active deployment uses it.
+
+**Alternatives considered**:
+- Footer link to an external static document: rejected because it does not solve in-app navigation and deployment behavior.
+- Rely only on Vercel rewrite: rejected because the application still lacks route semantics and non-Vercel hosts may return 404.

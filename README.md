@@ -13,7 +13,7 @@ yarn install
 yarn dev
 ```
 
-Run the browser checks with `yarn test:browser`. The production bundle is written to `dist/web`
+Run the browser checks with `yarn test:browser`. The browser suite includes unit, Playwright, route, and storage-privacy checks. The production bundle is written to `dist/web`
 and can be deployed to Vercel using the configuration in `vercel.json`. Native macOS functionality
 is implemented by the separate SwiftUI product described in the project plan; the browser build
 contains no native runtime code.

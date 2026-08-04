@@ -8,7 +8,7 @@ export default [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        projectService: { allowDefaultProject: ['vite.config.ts', 'vite.web.config.ts', 'vitest.config.ts', 'playwright.config.ts', 'tests/*/*.ts'], maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 32 },
+        projectService: { allowDefaultProject: ['vite.config.ts', 'vite.web.config.ts', 'vitest.config.ts', 'playwright.config.ts', 'tests/*/*.ts', 'tests/*/*/*.ts'], maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 64 },
       },
     },
     plugins: { '@typescript-eslint': tseslint },
