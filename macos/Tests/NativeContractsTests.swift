@@ -60,3 +60,72 @@ struct NativeContractsTests {
         #expect(await coordinator.state == .failed)
     }
 }
+
+@Suite("Native DOCX preview contracts")
+struct NativeDocxPreviewContractsTests {
+    private func fixture(_ name: String) throws -> Data {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try Data(contentsOf: root.appendingPathComponent("tests/fixtures/docx/\(name)"))
+    }
+
+    @Test func docxPreviewRendersRichFixture() throws {
+        let renderer = DocxPreviewRenderer()
+        let preview = renderer.render(data: try fixture("sample-rich.docx"))
+        #expect(preview.docxStatus == .rendered)
+        #expect(preview.available)
+        #expect(preview.sourceText.contains("Sample Rich Document"))
+        #expect(preview.sourceText.contains("hyperlink"))
+        #expect(preview.sourceText.contains("Alpha"))
+        #expect(preview.summary.contains("ready"))
+        #expect(!preview.docxBlocks.isEmpty)
+    }
+
+    @Test func docxPreviewReportsUnsupportedObjectsAsPartial() throws {
+        let renderer = DocxPreviewRenderer()
+        let preview = renderer.render(data: try fixture("unsupported-object.docx"))
+        #expect(preview.docxStatus == .partial)
+        #expect(preview.available)
+        #expect(preview.featureWarnings == ["Some embedded DOCX objects are not rendered."])
+        #expect(preview.summary == "DOCX preview is partial.")
+        #expect(preview.sourceText.contains("Text before the object."))
+        #expect(preview.sourceText.contains("Text after the object."))
+    }
+
+    @Test func docxPreviewFailsClosedOnMalformedPackage() throws {
+        let renderer = DocxPreviewRenderer()
+        let preview = renderer.render(data: try fixture("malformed-package.docx"))
+        #expect([DocxPreviewStatus.unavailable, .failed].contains(preview.docxStatus))
+        #expect(!preview.available)
+        #expect(preview.sourceText.isEmpty)
+        #expect(preview.docxBlocks.isEmpty)
+    }
+
+    @Test func emptyDocxIsUnavailableNotRendered() {
+        let preview = DocxPreviewRenderer().render(data: Data())
+        #expect(preview.docxStatus == .unavailable)
+        #expect(!preview.available)
+    }
+
+    @Test func docxPreviewCleansUpAllTemporaryResources() throws {
+        let workspace = FileManager.default.temporaryDirectory.appendingPathComponent("cam-docx-test-\(UUID().uuidString)")
+        let renderer = DocxPreviewRenderer(workspaceDirectory: workspace)
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        _ = renderer.render(data: try fixture("sample-rich.docx"))
+        _ = renderer.render(data: try fixture("unsupported-object.docx"))
+        _ = renderer.render(data: try fixture("malformed-package.docx"))
+        let leftovers = try FileManager.default.contentsOfDirectory(at: workspace, includingPropertiesForKeys: nil)
+        #expect(leftovers.isEmpty)
+    }
+
+    @Test func docxPreviewAvailabilityIsIndependentFromValidationGating() throws {
+        let source = CanonicalDocument(format: .docx, blocks: [.opaque(nodeID: "doc", sourceKind: "docx", value: "digest")])
+        let pass = PreviewModel(source: source, output: source, validation: .init(status: .pass, sourceHash: "h"), docxStatus: .rendered)
+        #expect(pass.available)
+        #expect(pass.compareAvailable)
+        let fail = PreviewModel(source: source, output: source, validation: .init(status: .fail, sourceHash: "h"), docxStatus: .rendered)
+        #expect(!fail.available)
+        #expect(!fail.compareAvailable)
+        // docxStatus still reports a render result regardless of validation gating.
+        #expect(fail.docxStatus == .rendered)
+    }
+}

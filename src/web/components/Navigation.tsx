@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { ROUTES, type WebRoute } from '../types/route';
+import { cn } from '@/lib/utils';
 
 interface NavigationProps {
   currentRoute: WebRoute;
@@ -9,23 +10,24 @@ interface NavigationProps {
 export const Navigation = memo(function Navigation({ currentRoute, onNavigate }: NavigationProps) {
   const navRoutes = [
     ROUTES['/'],
-    ROUTES['/setup'],
-    ROUTES['/review'],
     ROUTES['/settings'],
     ROUTES['/privacy'],
   ];
 
   return (
-    <nav className="app-navigation" aria-label="Main navigation">
+    <nav className="app-navigation flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6" aria-label="Main navigation">
       <div className="nav-brand">
-        <h1>Cam DocFormater</h1>
+        <h1 className="text-lg font-semibold">Cam DocFormater</h1>
       </div>
-      <ul className="nav-list" role="menubar">
+      <ul className="flex list-none items-center gap-2" role="menubar">
         {navRoutes.map((route) => (
           <li key={route.path} role="none">
             <button
               role="menuitem"
-              className={`nav-link ${currentRoute.path === route.path ? 'active' : ''}`}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
+                currentRoute.path === route.path && 'bg-accent text-accent-foreground'
+              )}
               onClick={() => onNavigate(route)}
               aria-current={currentRoute.path === route.path ? 'page' : undefined}
             >

@@ -7,11 +7,12 @@ test('uploads, discloses, formats, and offers a browser download', async ({ page
   await page.reload();
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Heading\nBody') });
-  await expect(page.getByRole('heading', { name: 'notes.txt' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
+  await expect(page.getByText('notes.txt')).toBeVisible();
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Start formatting' }).click();
+  await page.getByRole('button', { name: 'Start Formatting' }).click();
   await expect(page.getByRole('status')).toContainText('Formatting plan applied');
-  await expect(page.getByRole('button', { name: 'Download formatted file' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download Formatted File' })).toBeVisible();
 });
 
 test('rejects unsupported files without sending a request', async ({ page }) => {

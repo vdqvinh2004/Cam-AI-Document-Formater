@@ -253,6 +253,89 @@ Phase 5 (US3) ─────────────────────►
 Phase 6 (US4) ──────────────────────►  (depends on US1 routes, US2 comparison, US3 components)
 Phase 7 (US5) ──────────────────────►  (independent, optional, can run anytime after Phase 2)
 Phase 8 (Polish) ───────────────────►  (after all stories complete)
+Phase 9 (shadcn/ui + New Flow) ────►  (after Phase 8, can run in parallel with nothing — full rewrite)
+```
+---
+
+## Phase 9: User Story 6 — shadcn/ui Overhaul & New Flow (Priority: P1) 🎯 MVP
+
+**Goal**: Replace Radix + custom CSS with shadcn/ui + Tailwind, and collapse the 3-page wizard into a single-page progressive dashboard at `/` with deep-link compatibility for `/setup`, `/review`, `/settings`, `/privacy`.
+
+**Independent Test**: `yarn dev` loads `/` dashboard; upload → configure → format → review works end-to-end without page navigation; direct `/setup`, `/review`, `/settings`, `/privacy` still render; refresh preserves state; keyboard/screen-reader accessible; mobile stacks, desktop side-by-side; `yarn build` succeeds; bundle < 100 kB gzipped; all existing tests pass.
+
+### Tests for User Story 6 (OPTIONAL - only if tests requested)
+
+- [ ] T100 [P] [US6] Vitest test for shadcn/ui component rendering in `tests/unit/web/shadcn-components.test.ts`
+- [ ] T101 [P] [US6] Playwright test for progressive dashboard flow in `tests/web/shadcn-flow.spec.ts`
+- [ ] T102 [P] [US6] Playwright test for deep-link `/setup` `/review` into panel state in `tests/web/shadcn-flow.spec.ts`
+- [ ] T103 [P] [US6] Playwright test for responsive layout (375px / 1024px) in `tests/web/shadcn-flow.spec.ts`
+- [ ] T104 [P] [US6] Playwright test for keyboard navigation + focus management in `tests/web/shadcn-flow.spec.ts`
+- [ ] T105 [P] [US6] Vitest test for bundle size budget in `tests/unit/web/bundle-budget.test.ts`
+
+### Implementation for User Story 6
+
+**Phase 9a: Install & Configure shadcn/ui + Tailwind**
+- [ ] T106 [P] [US6] Install Tailwind CSS v4, `shadcn/ui` CLI, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`; remove `@radix-ui/*` from `package.json` (keep only transitive)
+- [ ] T107 [P] [US6] Run `npx shadcn@latest init` → create `components.json` (style: "new-york", base color: "stone", CSS variables: true, Tailwind CSS: true)
+- [ ] T108 [P] [US6] Create `tailwind.config.ts` mapping existing design tokens: warm paper (`--color-background`), serif display (`--font-serif`), green/orange accents (`--color-primary`, `--color-accent`), card shadows (`--shadow-card`), radius scale
+- [ ] T109 [P] [US6] Create `src/web/styles/globals.css` with `@tailwind base/components/utilities` + shadcn/ui CSS variables; delete `design-tokens.ts` and `web.css`
+- [ ] T110 [P] [US6] Update `vite.web.config.ts` for Tailwind v4 (or PostCSS config for v3) and path aliases for `@/components/ui`
+
+**Phase 9b: Generate shadcn/ui Primitive Components**
+- [ ] T111 [P] [US6] `npx shadcn@latest add button input textarea label checkbox select radio-group dropdown-menu tabs dialog alert-dialog progress toast tooltip badge scroll-area separator navigation-menu card`
+- [ ] T112 [P] [US6] Verify generated components in `src/web/components/ui/` compile and tree-shake
+
+**Phase 9c: Rewrite Feature Components with shadcn/ui**
+- [ ] T113 [US6] Rewrite `FileDropzone.tsx` using shadcn/ui `Card`, `Input`, `Button`, `Badge`; drag/drop + click; format validation toast
+- [ ] T114 [US6] Rewrite `FormatControls.tsx` using `RadioGroup` (style cards), `Textarea` (instructions), `Checkbox` (disclosure), `Button` (primary format action with loading)
+- [ ] T115 [US6] Rewrite `JobStatus.tsx` using `Progress`, `Toast`, `AlertDialog` (retry/confirm), `Badge` (status)
+- [ ] T116 [US6] Rewrite `PreviewPanel.tsx` using `Card`, `Tabs` (source/result), `ScrollArea`, `Separator`
+- [ ] T117 [US6] Rewrite `ComparisonSummary.tsx` using `Card`, `Badge` (preservation), `Tooltip` (category details)
+- [ ] T118 [US6] Rewrite `ExportActions.tsx` using `Button`, `DropdownMenu` (format options), `AlertDialog` (confirm)
+- [ ] T119 [US6] Rewrite `Navigation.tsx` using `NavigationMenu` or `Tabs`; mobile drawer via `Dialog`
+- [ ] T120 [US6] Rewrite `AppShell.tsx` to use new `Navigation`, responsive layout (header + main + footer)
+
+**Phase 9d: New Unified Dashboard Page**
+- [ ] T121 [US6] Create `DashboardPage.tsx` (replaces `WorkspacePage` as `/` route) with progressive panels:
+  - Panel 1: Upload (`FileDropzone`) — always visible until file selected
+  - Panel 2: Configure (`FormatControls`) — reveals after upload, collapsible
+  - Panel 3: Review (`PreviewPanel` + `ComparisonSummary` + `ExportActions`) — reveals after formatting
+  - Persistent: `AppShell` with `Navigation`, `JobStatus` toast region
+- [ ] T122 [US6] Refactor `src/web/main.tsx` to use `DashboardPage` at `/`; keep `SetupPage`, `ReviewPage`, `SettingsPage`, `PrivacyPage` as thin wrappers that navigate to `/` with panel state (e.g., `/?panel=setup`, `/?panel=review`) for deep-link compatibility
+- [ ] T123 [US6] Update `workflow-context.tsx` to track `activePanel: 'upload' | 'configure' | 'review'` and sync with URL search params
+
+**Phase 9e: Deep-Link Compatibility & Polish**
+- [ ] T124 [US6] Implement `/setup` → redirects to `/?panel=configure` (or renders `SetupPage` wrapper that mounts `DashboardPage` with `activePanel='configure'`)
+- [ ] T125 [US6] Implement `/review` → redirects to `/?panel=review` (same pattern)
+- [ ] T126 [US6] Verify refresh at any panel preserves workflow state (in-memory + URL sync via `useSearchParams`)
+- [ ] T127 [P] [US6] Update Playwright selectors in all `tests/web/*.spec.ts` for new shadcn/ui markup
+- [ ] T128 [P] [US6] Add shadcn/ui interaction tests (Dialog focus trap, DropdownMenu keyboard, Toast stacking)
+- [ ] T129 [P] [US6] Run `yarn build` and verify bundle size < 100 kB gzipped (use `vite-bundle-analyzer` or `rollup-plugin-visualizer`)
+- [ ] T130 [P] [US6] Run full test suite: `yarn typecheck && yarn lint && yarn test && yarn test:e2e && yarn build`
+
+**Checkpoint**: User Story 6 fully functional and independently testable
+
+---
+
+## Parallel Execution Examples (Updated)
+
+### Per User Story (tasks within a story can run in parallel where marked [P]):
+
+**US6 (shadcn/ui Overhaul & New Flow)**:
+```
+T100, T101, T102, T103, T104, T105 (tests) → T106, T107, T108, T109, T110 (config) → T111, T112 (primitives) → T113, T114, T115, T116, T117, T118, T119, T120 (components) → T121, T122, T123 (dashboard) → T124, T125, T126 (deep-links) → T127, T128, T129, T130 (polish/verify)
+```
+
+### Cross-Story Parallelization (after Phase 2 complete):
+
+```
+Phase 3 (US1) ──────────────────────►
+Phase 4 (US2) ─────────────────────►  (can run in parallel with US1 after T006-T016)
+Phase 5 (US3) ─────────────────────►  (can run in parallel with US1/US2 after T006-T016)
+Phase 6 (US4) ──────────────────────►  (depends on US1 routes, US2 comparison, US3 components)
+Phase 7 (US5) ──────────────────────►  (independent, optional, can run anytime after Phase 2)
+Phase 8 (Polish) ───────────────────►  (after all stories complete)
+Phase 9 (US6 shadcn/ui + New Flow) ─►  (after Phase 8, full rewrite — no parallelization)
 ```
 
 ---
@@ -792,13 +875,13 @@ unsupported OOXML feature must produce an explicit unavailable or partial-previe
   document supported OOXML elements, sanitization rules, resource limits, and the relationship
   between preview status and validation-gated export in `docs/preview-contract.md` and
   `specs/001-document-beautifier/data-model.md`
-- [ ] T167 [P] Add DOCX fixtures covering headings, paragraphs, lists, tables, hyperlinks, images,
+- [X] T167 [P] Add DOCX fixtures covering headings, paragraphs, lists, tables, hyperlinks, images,
   headers/footers, nested formatting, unsupported embedded objects, malformed packages, and large
   documents in `tests/fixtures/` and `tests/fixtures/README.md`
 - [X] T168 [P] Add browser contract tests for DOCX render success, partial rendering, sanitization,
   resource limits, missing relationships, malformed packages, and explicit unavailable fallback in
   `tests/web/docx-preview.test.ts`
-- [ ] T169 [P] Add native contract tests for DOCX render success, unsupported-feature fallback,
+- [X] T169 [P] Add native contract tests for DOCX render success, unsupported-feature fallback,
   temporary-resource cleanup, validation independence, and source immutability in
   `macos/Tests/NativeContractsTests.swift` and `macos/Tests/NativeWorkflowTests.swift`
 
@@ -815,7 +898,7 @@ unsupported OOXML feature must produce an explicit unavailable or partial-previe
   in `src/web/main.tsx` and `src/web/preview.ts`
 - [X] T173 Add responsive DOCX preview styling for rendered pages, tables, images, warnings, partial
   results, keyboard focus, reduced motion, and long-document overflow in `src/web/styles/web.css`
-- [x] T174 Add browser end-to-end coverage for DOCX source preview, formatted preview, compare
+- [X] T174 Add browser end-to-end coverage for DOCX source preview, formatted preview, compare
   fallback, malformed/unsupported feature messaging, validation gating, and download behavior in
   `tests/web/preview.spec.ts`
 
@@ -831,17 +914,17 @@ unsupported OOXML feature must produce an explicit unavailable or partial-previe
 - [X] T177 Integrate native DOCX source/result preview, zoom/scroll behavior, partial/unavailable
   states, focus restoration, and validation status into `macos/Sources/CamDocFormater/Features/Preview/PreviewView.swift` and
   `macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowView.swift`
-- [ ] T178 Add native DOCX accessibility and workflow coverage for source/result modes, warnings,
+- [X] T178 Add native DOCX accessibility and workflow coverage for source/result modes, warnings,
   keyboard navigation, reduced motion, renderer failure, cancellation, cleanup, and unchanged
   source behavior in `macos/Tests/NativeAccessibilityTests.swift` and
   `macos/Tests/NativeWorkflowTests.swift`
 
 ### DOCX preview verification and documentation
 
-- [ ] T179 [P] Add cross-product DOCX preview privacy tests proving extracted text, rendered
+- [X] T179 [P] Add cross-product DOCX preview privacy tests proving extracted text, rendered
   resources, temporary files, and preview state are not retained after reset, cancellation, failure,
   or application close in `tests/web/` and `macos/Tests/`
-- [ ] T180 [P] Document DOCX renderer capabilities, unsupported OOXML features, partial-preview
+- [X] T180 [P] Document DOCX renderer capabilities, unsupported OOXML features, partial-preview
   language, comparison limitations, performance limits, and troubleshooting in `docs/format-support.md`,
   `docs/web-design.md`, `docs/macos-design.md`, and `README.md`
 - [X] T181 Run browser and native DOCX preview unit, integration, accessibility, typecheck, build,

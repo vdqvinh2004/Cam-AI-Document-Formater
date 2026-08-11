@@ -3,12 +3,17 @@ import Foundation
 public struct DocxPreviewRenderer: Sendable {
     private let maxPackageBytes = 20 * 1024 * 1024
     private let maxXMLBytes = 8 * 1024 * 1024
+    private let workspaceDirectory: URL
 
-    public init() {}
+    public init() { self.init(workspaceDirectory: FileManager.default.temporaryDirectory) }
+
+    internal init(workspaceDirectory: URL) {
+        self.workspaceDirectory = workspaceDirectory
+    }
 
     public func render(data: Data) -> PreviewModel {
         guard data.count > 0, data.count <= maxPackageBytes else { return unavailable("DOCX is empty or exceeds the preview size limit.") }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cam-docx-preview-\(UUID().uuidString)")
+        let directory = workspaceDirectory.appendingPathComponent("cam-docx-preview-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

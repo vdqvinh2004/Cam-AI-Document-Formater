@@ -121,6 +121,54 @@ tests/web/
 1. Add privacy-page content covering Gemini disclosure, API-key storage, in-memory document handling, and user-controlled downloads.
 2. Add Playwright tests for direct navigation, footer privacy link, unknown routes, refresh, responsive layout, keyboard navigation, and workflow state messaging.
 3. Add Vitest tests for route resolution, workflow state, DOCX result semantics, comparison categories, and unavailable states.
+
+## Phase 8: shadcn/ui Overhaul & New Flow (Priority: P1)
+
+**Goal**: Replace the Radix + custom CSS stack with shadcn/ui components and redesign the multi-page wizard flow into a modern single-page dashboard with progressive disclosure. Keep the same routes for SEO/refresh compatibility but collapse the UX into a unified workspace that reveals Setup and Review as contextual panels.
+
+### Technical Changes
+
+1. **Add shadcn/ui**: Install `shadcn/ui` via CLI, configure `components.json`, add Tailwind CSS v4 (or v3 if preferred), and remove Radix primitives from `package.json`. Keep only Radix as transitive shadcn/ui dependencies.
+2. **Design system migration**: Replace `design-tokens.ts` + `web.css` with Tailwind config (`tailwind.config.ts`) + shadcn/ui CSS variables. Map existing warm paper palette, serif display, green/orange accents to shadcn/ui tokens (`--radius`, `--color-primary`, `--color-accent`, etc.).
+3. **Component rewrite**: Reimplement all components using shadcn/ui primitives:
+   - `Button`, `Input`, `Textarea`, `Label`, `Checkbox`, `Select`, `RadioGroup` → `FormatControls`
+   - `Card`, `Separator`, `ScrollArea` → `PreviewPanel`, `ComparisonSummary`
+   - `Dialog`, `AlertDialog` → Job confirmation, export confirmation
+   - `DropdownMenu`, `Tabs` → Navigation, style selection
+   - `Progress`, `Toast` → `JobStatus` progress and notifications
+   - `Tooltip`, `Badge` → Comparison badges, status indicators
+   - `Dropzone` (custom + shadcn/ui `Input`/`Button`) → `FileDropzone`
+4. **New unified flow** (single-page dashboard at `/` with conditional panels):
+   - **Step 1 – Upload**: Full-width dropzone card, supported formats, recent files (localStorage)
+   - **Step 2 – Configure** (reveals after upload): Sidebar or collapsible panel with style selector (shadcn/ui `RadioGroup` + cards), custom instructions (`Textarea`), disclosure checkbox (`Checkbox`), primary "Format" button (`Button` with loading state)
+   - **Step 3 – Review** (reveals after formatting): Two-column comparison (`PreviewPanel` + `ComparisonSummary`), validation badge, export actions (`Button` + `DropdownMenu` for format options)
+   - **Persistent**: Top bar with navigation (shadcn/ui `Tabs` or `NavigationMenu`), settings link, privacy link; footer with version
+5. **State & routing**: Keep existing `WebRoute` types and router for `/setup`, `/review`, `/settings`, `/privacy` direct links/refresh. The new `/` dashboard renders the progressive flow inline; navigating to `/setup` or `/review` deep-links into the corresponding panel state.
+6. **Accessibility**: shadcn/ui provides Radix-level keyboard/focus management. Verify focus order, ARIA labels, color contrast (WCAG AA), reduced motion.
+7. **Responsive**: Mobile-first with Tailwind breakpoints. Stack panels vertically < 768px; side-by-side ≥ 768px.
+8. **Bundle**: Tree-shake shadcn/ui (only used components). Target < 100 kB gzipped JS for the dashboard.
+
+### Independent Test
+
+- `yarn dev` loads `/` dashboard: upload → configure → format → review works end-to-end without page navigation
+- Direct `/setup`, `/review`, `/settings`, `/privacy` still render (deep-link into panel state)
+- Refresh at any step preserves workflow state (in-memory + URL sync)
+- Keyboard navigates all controls; focus visible; screen reader announces progress
+- Mobile viewport (375px) stacks correctly; desktop (≥ 1024px) shows side-by-side review
+- `yarn build` succeeds; bundle size within budget
+- All existing Vitest/Playwright tests pass (update selectors where markup changed)
+
+### Files to Add/Modify
+
+- `package.json` — add Tailwind, shadcn/ui deps; remove `@radix-ui/*` (keep transitive)
+- `tailwind.config.ts`, `postcss.config.js`, `src/web/styles/globals.css` — new design system
+- `components.json` — shadcn/ui config
+- `src/web/components/ui/*` — generated shadcn/ui components (button, card, input, textarea, select, checkbox, radio-group, dropdown-menu, tabs, dialog, alert-dialog, progress, toast, tooltip, badge, scroll-area, separator, label, navigation-menu)
+- `src/web/components/*` — rewrite all feature components using shadcn/ui
+- `src/web/pages/WorkspacePage.tsx` — new dashboard component (replaces old WorkspacePage + SetupPage + ReviewPage inline)
+- `src/web/pages/SetupPage.tsx`, `ReviewPage.tsx` — keep as thin wrappers for deep-link compatibility
+- `src/web/styles/design-tokens.ts`, `web.css` — remove or archive
+- `tests/web/*` — update Playwright selectors; add shadcn/ui interaction tests DOCX result semantics, comparison categories, and unavailable states.
 4. Run `yarn typecheck`, `yarn lint`, `yarn test`, `yarn test:e2e`, and `yarn build`.
 5. Inspect browser storage after successful, failed, and refreshed workflows to verify no document contents or history persist.
 

@@ -1,83 +1,84 @@
-import { useWorkflow } from '../state/workflow-context';
+import { useRouter } from '../router';
+import { ROUTES } from '../types/route';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function PrivacyPage() {
-  const { navigate } = useWorkflow();
+  const { navigate } = useRouter();
 
   return (
-    <div className="privacy-page">
-      <h1>Privacy & Data Handling</h1>
-      
-      <section>
-        <h2>Gemini API Disclosure</h2>
-        <p>
-          This application uses Google's Gemini API to generate formatting plans for your documents.
-          When you confirm formatting, the following data is sent to Google:
-        </p>
-        <ul>
-          <li>Document structure (headings, lists, tables, images, links) — <strong>not</strong> the full text content</li>
-          <li>Your selected style profile and any custom instructions</li>
-          <li>A unique job identifier (no personal information)</li>
-        </ul>
-        <p>
-          The full document text is <strong>never</strong> sent to the API. Only structural metadata
-          and formatting preferences are transmitted.
-        </p>
-      </section>
+    <div className="space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Privacy & Data Handling</h1>
+      </header>
 
-      <section>
-        <h2>API Key Storage</h2>
-        <p>
-          Your Gemini API key is stored in your browser's origin-scoped localStorage via the
-          <code>api-key-storage.ts</code> module. It is:
-        </p>
-        <ul>
-          <li>Never sent to our servers</li>
-          <li>Never logged or included in analytics</li>
-          <li>Only read in memory when a formatting job starts</li>
-          <li>Removable at any time from the Settings page</li>
-        </ul>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Gemini API Disclosure</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>This application uses Google's Gemini API to generate formatting plans for your documents. When you confirm formatting, the following data is sent to Google:</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Document structure (headings, lists, tables, images, links) — <strong className="text-foreground">not</strong> the full text content</li>
+            <li>Your selected style profile and any custom instructions</li>
+            <li>A unique job identifier (no personal information)</li>
+          </ul>
+          <p>The full document text is <strong className="text-foreground">never</strong> sent to the API. Only structural metadata and formatting preferences are transmitted.</p>
+        </CardContent>
+      </Card>
 
-      <section>
-        <h2>Document Handling</h2>
-        <p>
-          All document processing happens <strong>locally in your browser</strong>:
-        </p>
-        <ul>
-          <li>Source files are read into memory only</li>
-          <li>Formatting plans are applied locally</li>
-          <li>Validation runs against in-memory representations</li>
-          <li>Exported files are downloaded directly — never uploaded</li>
-        </ul>
-        <p>
-          <strong>No document content, extracted text, formatting plans, or comparison data is ever persisted.</strong>
-          Refreshing or closing the browser tab clears all workflow state.
-        </p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>API Key Storage</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>Your Gemini API key is stored in your browser's origin-scoped localStorage via the <code className="rounded bg-muted px-1">api-key-storage.ts</code> module. It is:</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Never sent to our servers</li>
+            <li>Never logged or included in analytics</li>
+            <li>Only read in memory when a formatting job starts</li>
+            <li>Removable at any time from the Settings page</li>
+          </ul>
+        </CardContent>
+      </Card>
 
-      <section>
-        <h2>Downloads</h2>
-        <p>
-          Formatted documents are downloaded as files you control. The application does not retain
-          copies, track downloads, or access your filesystem beyond the file you explicitly select
-          for input and the location you choose for output.
-        </p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Document Handling</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>All document processing happens <strong className="text-foreground">locally in your browser</strong>:</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Source files are read into memory only</li>
+            <li>Formatting plans are applied locally</li>
+            <li>Validation runs against in-memory representations</li>
+            <li>Exported files are downloaded directly — never uploaded</li>
+          </ul>
+          <p><strong className="text-foreground">No document content, extracted text, formatting plans, or comparison data is ever persisted.</strong> Refreshing or closing the browser tab clears all workflow state.</p>
+        </CardContent>
+      </Card>
 
-      <section>
-        <h2>No Analytics or Tracking</h2>
-        <p>
-          This application includes no analytics, telemetry, crash reporting, or third-party
-          tracking scripts. Your usage is not monitored.
-        </p>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Downloads</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Formatted documents are downloaded as files you control. The application does not retain copies, track downloads, or access your filesystem beyond the file you explicitly select for input and the location you choose for output.
+        </CardContent>
+      </Card>
 
-      <button 
-        onClick={() => navigate({ path: '/', label: 'Workspace', requiresDocument: false, requiresResult: false })} 
-        className="btn-secondary"
-      >
-        Back to Workspace
-      </button>
+      <Card>
+        <CardHeader>
+          <CardTitle>No Analytics or Tracking</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          This application includes no analytics, telemetry, crash reporting, or third-party tracking scripts. Your usage is not monitored.
+        </CardContent>
+      </Card>
+
+      <div>
+        <Button variant="secondary" onClick={() => navigate(ROUTES['/'])}>Back to Workspace</Button>
+      </div>
     </div>
   );
 }

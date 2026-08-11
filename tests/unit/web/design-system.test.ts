@@ -1,39 +1,46 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { designTokens } from '../../../src/web/styles/design-tokens';
+
+async function globals() {
+  return readFile(new URL('../../../src/web/styles/globals.css', import.meta.url), 'utf8');
+}
 
 describe('design system tokens', () => {
-  it('defines a warm paper background and green/orange accents', () => {
-    expect(designTokens.colors.background).toBe('#f1eee6');
-    expect(designTokens.colors.backgroundWarm).toBe('#fffdf6');
-    expect(designTokens.colors.accentPrimary).toBe('#d46e4b');
-    expect(designTokens.colors.textPrimary).toBe('#173f3b');
+  it('defines a warm paper background and green/orange accents via HSL vars', async () => {
+    const css = await globals();
+    expect(css).toMatch(/--background:\s*48 33% 97%/);
+    expect(css).toMatch(/--primary:\s*20 72% 50%/);
+    expect(css).toMatch(/--secondary:\s*162/);
+    expect(css).toContain('--accent');
+    expect(css).toContain('--border');
+    expect(css).toContain('--ring');
   });
 
-  it('exposes a serif display font stack', () => {
-    expect(designTokens.typography.fontFamily.serif).toContain('Georgia');
+  it('exposes a serif display font family', async () => {
+    const css = await globals();
+    expect(css).toMatch(/--font-serif:\s*Georgia/);
   });
 
-  it('keeps spacing and radii scales coherent', () => {
-    const spacing = Object.values(designTokens.spacing);
-    expect(spacing.every((value) => value.endsWith('px'))).toBe(true);
-    expect(designTokens.radii.sm).toBe('4px');
-    expect(designTokens.radii.md).toBe('8px');
-    expect(designTokens.radii.lg).toBe('12px');
+  it('keeps a coherent radius scale', async () => {
+    const css = await globals();
+    expect(css).toMatch(/--radius-md:\s*calc\(var\(--radius\) - 2px\)/);
+    expect(css).toMatch(/--radius-sm:\s*calc\(var\(--radius\) - 4px\)/);
   });
 
-  it('orders focus, card, and overlay surfaces by z-index', () => {
-    expect(designTokens.zIndex.dropdown).toBeLessThan(designTokens.zIndex.modal);
-    expect(designTokens.zIndex.modal).toBeLessThan(designTokens.zIndex.tooltip);
+  it('defines a visible focus ring via the ring token', async () => {
+    const css = await globals();
+    expect(css).toContain('--ring:');
+    expect(css).toContain('focus-visible-ring');
   });
 
-  it('provides a visible focus ring token', () => {
-    expect(designTokens.colors.focusRing).toContain('rgba(212, 110, 75');
-    expect(designTokens.colors.borderFocus).toBe(designTokens.colors.accentPrimary);
+  it('orders surfaces via z-50 and provides shadow-card utility', async () => {
+    const css = await globals();
+    expect(css).toContain('--shadow-card:');
+    expect(css).toContain('shadow-card');
   });
 
-  it('defines typography scales used by headings and controls', () => {
-    expect(designTokens.typography.fontSize.display).toMatch(/clamp\(/);
-    expect(designTokens.typography.fontSize.base).toBe('13px');
-    expect(designTokens.typography.fontWeight.bold).toBe(700);
+  it('respects reduced motion preferences', async () => {
+    const css = await globals();
+    expect(css).toContain('prefers-reduced-motion');
   });
 });

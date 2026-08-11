@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
+import { UploadCloud } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface FileDropzoneProps {
   onFileSelect: (file: File) => void;
@@ -41,7 +43,7 @@ export function FileDropzone({ onFileSelect, onFileError, disabled = false, acce
     e.stopPropagation();
     setDragActive(false);
     if (disabled) return;
-    
+
     const file = e.dataTransfer.files[0];
     if (file) selectFile(file);
   }, [disabled, selectFile]);
@@ -65,7 +67,11 @@ export function FileDropzone({ onFileSelect, onFileError, disabled = false, acce
 
   return (
     <div
-      className={`file-dropzone ${dragActive ? 'drag-active' : ''} ${disabled ? 'disabled' : ''}`}
+      className={cn(
+        'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        dragActive ? 'border-primary bg-accent' : 'border-border hover:border-primary/60',
+        disabled && 'cursor-not-allowed opacity-60'
+      )}
       onDragOver={handleDrag}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -85,17 +91,13 @@ export function FileDropzone({ onFileSelect, onFileError, disabled = false, acce
         disabled={disabled}
         aria-hidden="true"
       />
-      <div className="dropzone-content">
-        <svg className="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        <p className="dropzone-text">
+      <UploadCloud className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
+      <div className="space-y-1">
+        <p className="text-lg font-medium">
           {disabled ? 'File selected' : 'Drag & drop a document here, or click to browse'}
         </p>
-        <p className="dropzone-hint">Supported: TXT, Markdown, DOCX, PDF</p>
-        {error && <p className="dropzone-error" role="alert">{error}</p>}
+        <p className="text-sm text-muted-foreground">Supported: TXT, Markdown, DOCX, PDF</p>
+        {error && <p className="text-sm font-medium text-destructive" role="alert">{error}</p>}
       </div>
     </div>
   );

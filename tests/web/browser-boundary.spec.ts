@@ -33,7 +33,7 @@ test.describe('Browser boundary — direct navigation and refresh', () => {
 test.describe('Footer privacy link', () => {
   test('clicking the footer Privacy link navigates to /privacy', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('link', { name: 'Privacy' }).click();
+    await page.getByRole('button', { name: 'Privacy' }).click();
     await expect(page).toHaveURL(/\/privacy$/);
     await expect(page.getByRole('heading', { name: 'Privacy & Data Handling' })).toBeVisible();
   });

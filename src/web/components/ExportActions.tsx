@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { BrowserResult } from '../state/workflow-context';
+import { Button } from '@/components/ui/button';
 
 interface ExportActionsProps {
   result: BrowserResult;
@@ -19,11 +20,11 @@ export const ExportActions = memo(function ExportActions({ result, onExportCompl
   };
 
   return (
-    <div className="export-actions">
-      <button onClick={download} className="btn-primary" disabled={!canExport}>
+    <div className="flex flex-col items-start gap-2">
+      <Button onClick={download} disabled={!canExport}>
         Download Formatted File
-      </button>
-      {!canExport && <p className="export-warning">Export is unavailable until a validated formatting transformation exists.</p>}
+      </Button>
+      {!canExport && <p className="text-sm text-muted-foreground">Export is unavailable until a validated formatting transformation exists.</p>}
     </div>
   );
 });

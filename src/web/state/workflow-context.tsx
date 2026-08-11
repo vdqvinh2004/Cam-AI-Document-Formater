@@ -3,6 +3,7 @@ import type { WebRoute } from '../types/route';
 import type { PreviewEvidence } from '../types/evidence';
 import type { ComparisonEvidence } from '../types/comparison';
 import type { JobStatus, JobMessage } from '../types/job';
+import type { DashboardPanel } from '../types/panel';
 import { createLocalStorageKeyStore } from '../api-key-storage';
 import { useRouter } from '../router';
 import { readSource, requestFormattingPlan, formatSource, extractDocxText } from '../formatting';
@@ -28,6 +29,7 @@ export interface BrowserResult {
 
 export interface WorkflowState {
   currentRoute: WebRoute;
+  activePanel: DashboardPanel;
   source: BrowserSource | null;
   result: BrowserResult | null;
   sourcePreview: PreviewEvidence | null;
@@ -43,6 +45,7 @@ export interface WorkflowState {
 
 export type WorkflowAction =
   | { type: 'SET_ROUTE'; payload: WebRoute }
+  | { type: 'SET_ACTIVE_PANEL'; payload: DashboardPanel }
   | { type: 'SET_SOURCE'; payload: BrowserSource | null }
   | { type: 'SET_RESULT'; payload: BrowserResult | null }
   | { type: 'SET_SOURCE_PREVIEW'; payload: PreviewEvidence | null }
@@ -56,6 +59,7 @@ export type WorkflowAction =
 
 export const initialState: WorkflowState = {
   currentRoute: { path: '/', label: 'Workspace', requiresDocument: false, requiresResult: false },
+  activePanel: 'upload',
   source: null,
   result: null,
   sourcePreview: null,
@@ -72,6 +76,8 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
   switch (action.type) {
     case 'SET_ROUTE':
       return { ...state, currentRoute: action.payload };
+    case 'SET_ACTIVE_PANEL':
+      return { ...state, activePanel: action.payload };
     case 'SET_SOURCE':
       return { ...state, source: action.payload, result: null, resultPreview: null, comparison: null };
     case 'SET_RESULT':
@@ -100,6 +106,7 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
 interface WorkflowContextValue {
   state: WorkflowState;
   navigate: (route: WebRoute) => void;
+  setActivePanel: (panel: DashboardPanel) => void;
   runFormatting: () => Promise<void>;
   setSource: (source: BrowserSource | null) => void;
   setResult: (result: BrowserResult | null) => void;
@@ -129,6 +136,14 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     router.navigate(route);
     dispatch({ type: 'SET_ROUTE', payload: route });
   }, [router]);
+  const setActivePanel = useCallback((panel: DashboardPanel) => {
+    const params = new URLSearchParams(window.location.search);
+    if (panel === 'upload') params.delete('panel');
+    else params.set('panel', panel);
+    const query = params.toString();
+    window.history.pushState(null, '', `/${query ? `?${query}` : ''}`);
+    dispatch({ type: 'SET_ACTIVE_PANEL', payload: panel });
+  }, []);
   const setSource = useCallback((source: BrowserSource | null) => dispatch({ type: 'SET_SOURCE', payload: source }), []);
   const setResult = useCallback((result: BrowserResult | null) => dispatch({ type: 'SET_RESULT', payload: result }), []);
   const setSourcePreview = useCallback((preview: PreviewEvidence | null) => dispatch({ type: 'SET_SOURCE_PREVIEW', payload: preview }), []);
@@ -180,12 +195,12 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_COMPARISON', payload: { ...comparison, validation: validationPassed ? 'pass' : 'fail' } });
       setJobStatus({ status: validationPassed ? 'complete' : 'blocked', message: validationPassed ? (warnings.length ? warnings.join(' ') : 'Formatting complete.') : 'No safe browser transformation is available for this format; the original file was preserved.', progress: 100 });
       if (validationPassed) {
-        navigate({ path: '/review', label: 'Review', requiresDocument: true, requiresResult: true });
+        setActivePanel('review');
       }
     } catch (error) {
       setJobStatus({ status: 'failed', message: error instanceof Error ? error.message : 'Formatting failed.' });
     }
-  }, [router, setJobStatus, state.disclosed, state.instructions, state.source, state.style]);
+  }, [setActivePanel, setJobStatus, state.disclosed, state.instructions, state.source, state.style]);
   const setApiKey = useCallback((apiKey: string) => {
     const keyStore = createLocalStorageKeyStore();
     keyStore.setKey(apiKey);
@@ -199,6 +214,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     state,
     navigate,
+    setActivePanel,
     runFormatting,
     setSource,
     setResult,
@@ -212,7 +228,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setApiKey,
     removeApiKey,
     resetWorkflow,
-  }), [state, navigate, runFormatting, setSource, setResult, setSourcePreview, setResultPreview, setComparison, setJobStatus, setStyle, setInstructions, setDisclosed, setApiKey, removeApiKey, resetWorkflow]);
+  }), [state, navigate, setActivePanel, runFormatting, setSource, setResult, setSourcePreview, setResultPreview, setComparison, setJobStatus, setStyle, setInstructions, setDisclosed, setApiKey, removeApiKey, resetWorkflow]);
 
   return <WorkflowContext.Provider value={value}>{children}</WorkflowContext.Provider>;
 }

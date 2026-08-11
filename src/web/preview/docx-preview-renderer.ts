@@ -1,4 +1,3 @@
-import { renderAsync } from 'docx-preview';
 import JSZip from 'jszip';
 
 export interface DocxPreviewResult {
@@ -9,6 +8,7 @@ export interface DocxPreviewResult {
 }
 
 export async function renderDocxPreview(arrayBuffer: ArrayBuffer): Promise<DocxPreviewResult> {
+  const { renderAsync } = await import('docx-preview');
   const warnings: string[] = [];
   let featureCount = 0;
   let html = '';

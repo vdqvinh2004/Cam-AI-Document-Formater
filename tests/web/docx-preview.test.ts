@@ -10,9 +10,12 @@ async function docx(xml: string): Promise<ArrayBuffer> {
   return zip.generateAsync({ type: 'arraybuffer' });
 }
 
+const FIXTURES = join(__dirname, '..', 'fixtures', 'docx');
+const fixture = (name: string): Buffer => readFileSync(join(FIXTURES, name));
+
 describe('browser DOCX preview', () => {
   it('renders the rich fixture with headings, lists, tables, images, and hyperlinks', async () => {
-    const bytes = readFileSync(join(__dirname, '..', 'fixtures', 'docx', 'sample-rich.docx'));
+    const bytes = fixture('sample-rich.docx');
     const preview = await buildDocxPreview(bytes);
     expect(preview.status).toBe('rendered');
     expect(preview.html).toContain('<h1>Sample Rich Document</h1>');
@@ -32,14 +35,50 @@ describe('browser DOCX preview', () => {
     expect(preview.text).toContain('Title & <safe>');
   });
 
-  it('reports unsupported features as partial', async () => {
-    const preview = await buildDocxPreview(await docx('<w:document><w:body><w:p><w:r><w:t>Text</w:t></w:r><w:object/></w:p></w:body></w:document>'));
+  it('renders body content from a header/footer fixture', async () => {
+    const preview = await buildDocxPreview(fixture('header-footer.docx'));
+    expect(preview.status).toBe('rendered');
+    expect(preview.text).toContain('Header and Footer Document');
+    expect(preview.text).toContain('Body content between header and footer.');
+  });
+
+  it('renders nested run formatting without losing text', async () => {
+    const preview = await buildDocxPreview(fixture('nested-formatting.docx'));
+    expect(preview.status).toBe('rendered');
+    expect(preview.text).toContain('Bold large run');
+    expect(preview.text).toContain('italic run');
+    expect(preview.text).toContain('underlined run');
+    expect(preview.text).toContain('Subscript');
+    expect(preview.text).toContain('Superscript');
+    expect(preview.text).toContain('Colored');
+  });
+
+  it('reports unsupported embedded objects as partial with a user-safe warning', async () => {
+    const preview = await buildDocxPreview(fixture('unsupported-object.docx'));
     expect(preview.status).toBe('partial');
-    expect(preview.warnings[0]).toContain('w:object');
+    expect(preview.warnings.join(' ')).toContain('w:object');
+    expect(preview.text).toContain('Text before the object.');
+    expect(preview.text).toContain('Text after the object.');
+    expect(preview.html).not.toContain('oleObject1');
   });
 
   it('fails closed for malformed or unreadable packages', async () => {
     await expect(buildDocxPreview(new Blob(['not a zip']))).resolves.toMatchObject({ status: 'failed', html: '' });
     await expect(buildDocxPreview(new ArrayBuffer(0))).resolves.toMatchObject({ status: 'unavailable' });
+  });
+
+  it('fails closed for a tampered ZIP fixture without partial output', async () => {
+    const preview = await buildDocxPreview(fixture('malformed-package.docx'));
+    expect(['failed', 'unavailable']).toContain(preview.status);
+    expect(preview.html).toBe('');
+    expect(preview.text).toBe('');
+  });
+
+  it('renders a large document within the bounded preview', async () => {
+    const preview = await buildDocxPreview(fixture('large-document.docx'));
+    expect(preview.status).toBe('rendered');
+    expect(preview.text).toContain('Paragraph number 0');
+    expect(preview.text).toContain('Paragraph number 1599');
+    expect(preview.featureCount).toBeGreaterThanOrEqual(1600);
   });
 });

@@ -33,6 +33,8 @@ Focused regression checks must cover:
 3. TXT/Markdown result preview uses actual result text and compare no longer compares against an empty string.
 4. DOCX source/result previews are built from their actual package bytes; a result is never silently represented as plain text.
 5. DOCX formatting is reported as unavailable unless a real package transformation and validation pass exist.
+6. DOCX preview renders text only: images, drawings, headers/footers, and nested run properties are not shown; embedded OLE objects produce a `partial` preview with a warning.
+7. DOCX preview limits are 20 MB package / 8 MB document XML (browser output also capped at 250k characters); malformed packages fail closed to `unavailable`/`failed` with no preview.
 6. Compare separates preserved content from presentation changes and uses a truthful unavailable state when evidence is insufficient.
 7. UI controls remain keyboard-accessible and usable at narrow viewport sizes.
 8. Source and generated document contents are absent from browser storage after reload/close; only the documented API-key storage remains.

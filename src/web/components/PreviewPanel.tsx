@@ -24,7 +24,7 @@ export function PreviewPanel({ source, result }: { source: BrowserSource; result
   const resultPreview = state.resultPreview;
 
   return (
-    <div className="preview-panel">
+    <div className="grid gap-4 md:grid-cols-2">
       <PreviewColumn title="Before" preview={sourcePreview} />
       <PreviewColumn title="After" preview={resultPreview} />
     </div>
@@ -33,14 +33,14 @@ export function PreviewPanel({ source, result }: { source: BrowserSource; result
 
 const PreviewColumn = memo(function PreviewColumn({ title, preview }: { title: string; preview: PreviewEvidence | null }) {
   return (
-    <div className="preview-column">
-      <h3>{title}</h3>
-      {!preview ? <p className="preview-pane">Loading preview...</p> : (
-        <div className="preview-pane" aria-label={`${title} preview`}>
+    <div className="preview-column space-y-2">
+      <h3 className="font-medium">{title}</h3>
+      {!preview ? <p className="text-sm text-muted-foreground">Loading preview...</p> : (
+        <div className="rounded-md border bg-background p-4 text-sm" aria-label={`${title} preview`}>
           {preview.status === 'unavailable' || preview.status === 'failed'
             ? <p>{preview.warnings.join(' ') || 'Preview unavailable.'}</p>
             : <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(preview.html) }} />}
-          {preview.warnings.length > 0 && <p className="preview-warning">{preview.warnings.join(' ')}</p>}
+          {preview.warnings.length > 0 && <p className="mt-2 text-xs text-warning">{preview.warnings.join(' ')}</p>}
         </div>
       )}
     </div>

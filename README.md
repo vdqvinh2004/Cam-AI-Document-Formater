@@ -53,3 +53,10 @@ The desktop build uses macOS Keychain. The browser boundary under `src/web/` use
 `localStorage` adapter (`camdoc.gemini-api-key`) and browser downloads instead of native dialogs.
 See [docs/web-security.md](docs/web-security.md), [docs/web-design.md](docs/web-design.md), and
 [docs/macos-design.md](docs/macos-design.md) for the platform rules and privacy differences.
+
+## DOCX preview
+
+DOCX uploads get a read-only text preview with truthful `rendered` / `partial` / `unavailable` /
+`failed` states (see [docs/preview-contract.md](docs/preview-contract.md)). Embedded OLE objects
+degrade to `partial` with an explicit warning; malformed or oversized packages report
+`unavailable`; preview never enables export — that requires a fresh validation `pass`.
