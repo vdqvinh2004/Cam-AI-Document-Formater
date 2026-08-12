@@ -129,3 +129,39 @@ struct NativeDocxPreviewContractsTests {
         #expect(fail.docxStatus == .rendered)
     }
 }
+
+@Suite("Native exact preservation contracts")
+struct NativeExactPreservationTests {
+    @Test func presentationOnlyChangesRemainExact() {
+        let source = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "A quick brown fox", presentation: .init())])
+        let output = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "A quick brown fox", presentation: .init(bold: true, italic: true))])
+        let result = NativeValidationComparator().compare(source: source, output: output, sourceHash: "h")
+        #expect(result.status == .pass)
+    }
+
+    @Test func rewrittenWordFailsExactness() {
+        let source = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "The quick brown fox", presentation: .init())])
+        let output = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "The quick brown cat", presentation: .init())])
+        let result = NativeValidationComparator().compare(source: source, output: output, sourceHash: "h")
+        #expect(result.status == .fail)
+        #expect(result.issues.contains { $0.category == "content-exactness" })
+    }
+
+    @Test func reorderedWordsFailExactness() {
+        let source = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "one two three", presentation: .init())])
+        let output = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "three two one", presentation: .init())])
+        #expect(NativeValidationComparator().compare(source: source, output: output, sourceHash: "h").status == .fail)
+    }
+
+    @Test func identicalWordCountWithDifferentWordsFailsExactness() {
+        let source = CanonicalDocument(format: .markdown, blocks: [.heading(nodeID: "h0", level: 1, text: "Plan overview", presentation: .init())])
+        let output = CanonicalDocument(format: .markdown, blocks: [.heading(nodeID: "h0", level: 1, text: "Project summary", presentation: .init())])
+        #expect(NativeValidationComparator().compare(source: source, output: output, sourceHash: "h").status == .fail)
+    }
+
+    @Test func whitespaceDiffsRemainExact() {
+        let source = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "alpha   beta", presentation: .init())])
+        let output = CanonicalDocument(format: .txt, blocks: [.paragraph(nodeID: "p0", text: "alpha beta", presentation: .init())])
+        #expect(NativeValidationComparator().compare(source: source, output: output, sourceHash: "h").status == .pass)
+    }
+}

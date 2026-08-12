@@ -4,6 +4,9 @@ export interface DocxFormattingOperation {
   nodeID: string;
   bold?: boolean;
   italic?: boolean;
+  fontSize?: number;
+  fontFamily?: string;
+  color?: string;
 }
 
 export interface DocxFormattingPlan {
@@ -34,6 +37,62 @@ function serializeXml(doc: Document): string {
   return serializer.serializeToString(doc);
 }
 
+function applyPresentation(rPr: Element, operation: DocxFormattingOperation): void {
+  const doc = rPr.ownerDocument!;
+
+  if (operation.bold !== undefined) {
+    let b = rPr.getElementsByTagName('w:b')[0] as Element | undefined;
+    if (operation.bold) {
+      if (!b) {
+        b = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:b');
+        rPr.appendChild(b);
+      }
+    } else if (b) {
+      rPr.removeChild(b);
+    }
+  }
+
+  if (operation.italic !== undefined) {
+    let i = rPr.getElementsByTagName('w:i')[0] as Element | undefined;
+    if (operation.italic) {
+      if (!i) {
+        i = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:i');
+        rPr.appendChild(i);
+      }
+    } else if (i) {
+      rPr.removeChild(i);
+    }
+  }
+
+  if (operation.fontSize !== undefined) {
+    let sz = rPr.getElementsByTagName('w:sz')[0] as Element | undefined;
+    if (!sz) {
+      sz = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:sz');
+      rPr.appendChild(sz);
+    }
+    sz.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', String(Math.round(operation.fontSize * 2)));
+  }
+
+  if (operation.fontFamily) {
+    let fonts = rPr.getElementsByTagName('w:rFonts')[0] as Element | undefined;
+    if (!fonts) {
+      fonts = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rFonts');
+      rPr.appendChild(fonts);
+    }
+    fonts.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:ascii', operation.fontFamily);
+    fonts.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:hAnsi', operation.fontFamily);
+  }
+
+  if (operation.color) {
+    let color = rPr.getElementsByTagName('w:color')[0] as Element | undefined;
+    if (!color) {
+      color = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:color');
+      rPr.appendChild(color);
+    }
+    color.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', operation.color.replace(/^#/, ''));
+  }
+}
+
 function applyFormattingToParagraph(paragraph: Element, operations: Map<string, DocxFormattingOperation>, nodeIndex: number): void {
   const nodeID = `p${nodeIndex}`;
   const operation = operations.get(nodeID);
@@ -49,29 +108,7 @@ function applyFormattingToParagraph(paragraph: Element, operations: Map<string, 
       run.insertBefore(rPr, run.firstChild);
     }
 
-    if (operation.bold !== undefined) {
-      let b = rPr.getElementsByTagName('w:b')[0] as Element | undefined;
-      if (operation.bold) {
-        if (!b) {
-          b = paragraph.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:b');
-          rPr.appendChild(b);
-        }
-      } else if (b) {
-        rPr.removeChild(b);
-      }
-    }
-
-    if (operation.italic !== undefined) {
-      let i = rPr.getElementsByTagName('w:i')[0] as Element | undefined;
-      if (operation.italic) {
-        if (!i) {
-          i = paragraph.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:i');
-          rPr.appendChild(i);
-        }
-      } else if (i) {
-        rPr.removeChild(i);
-      }
-    }
+    applyPresentation(rPr, operation);
   }
 }
 
@@ -90,29 +127,7 @@ function applyFormattingToHeading(paragraph: Element, operations: Map<string, Do
       run.insertBefore(rPr, run.firstChild);
     }
 
-    if (operation.bold !== undefined) {
-      let b = rPr.getElementsByTagName('w:b')[0] as Element | undefined;
-      if (operation.bold) {
-        if (!b) {
-          b = paragraph.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:b');
-          rPr.appendChild(b);
-        }
-      } else if (b) {
-        rPr.removeChild(b);
-      }
-    }
-
-    if (operation.italic !== undefined) {
-      let i = rPr.getElementsByTagName('w:i')[0] as Element | undefined;
-      if (operation.italic) {
-        if (!i) {
-          i = paragraph.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:i');
-          rPr.appendChild(i);
-        }
-      } else if (i) {
-        rPr.removeChild(i);
-      }
-    }
+    applyPresentation(rPr, operation);
   }
 }
 

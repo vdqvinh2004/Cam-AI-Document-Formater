@@ -11,7 +11,7 @@ test('uploads, discloses, formats, and offers a browser download', async ({ page
   await expect(page.getByText('notes.txt')).toBeVisible();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Start Formatting' }).click();
-  await expect(page.getByRole('status')).toContainText('Formatting plan applied');
+  await expect(page.getByRole('status')).toContainText('no style changes were applied');
   await expect(page.getByRole('button', { name: 'Download Formatted File' })).toBeVisible();
 });
 

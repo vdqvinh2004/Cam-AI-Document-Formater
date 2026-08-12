@@ -186,14 +186,22 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         createSourcePreview(state.source.arrayBuffer, source.format, state.source.name),
         createResultPreview(formatted.blob, formatted.format, formattingAvailable),
       ]);
+      setJobStatus({ status: 'validating', message: 'Verifying that 100% of the content is preserved...', progress: 85 });
       const comparison = compareDocuments({ sourceText, resultText, sourceFormat: source.format, resultFormat: formatted.format, validationStatus: 'not-run' });
       const validationPassed = formattingAvailable && comparison.status === 'preserved';
         const updatedResult: BrowserResult = { ...result, validationStatus: validationPassed ? 'pass' : 'fail' };
       dispatch({ type: 'SET_SOURCE_PREVIEW', payload: sourcePreview });
       dispatch({ type: 'SET_RESULT', payload: updatedResult });
       dispatch({ type: 'SET_RESULT_PREVIEW', payload: resultPreview });
-      dispatch({ type: 'SET_COMPARISON', payload: { ...comparison, validation: validationPassed ? 'pass' : 'fail' } });
-      setJobStatus({ status: validationPassed ? 'complete' : 'blocked', message: validationPassed ? (warnings.length ? warnings.join(' ') : 'Formatting complete.') : 'No safe browser transformation is available for this format; the original file was preserved.', progress: 100 });
+      const requestedChanges = plan.operations.length > 0;
+      const noChangesApplied = comparison.status === 'preserved' && !requestedChanges;
+      dispatch({ type: 'SET_COMPARISON', payload: { ...comparison, validation: validationPassed ? 'pass' : 'fail', noChangesApplied } });
+      const finalMessage = !validationPassed
+        ? 'Formatting changed document content; export was blocked and the original file was preserved.'
+        : noChangesApplied
+          ? 'Formatting finished, but no style changes were applied — the result is identical to the source. Try another style or adjust instructions.'
+          : warnings.length ? warnings.join(' ') : 'Formatting complete.';
+      setJobStatus({ status: validationPassed ? 'complete' : 'blocked', message: finalMessage, progress: 100 });
       if (validationPassed) {
         setActivePanel('review');
       }

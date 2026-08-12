@@ -1,5 +1,5 @@
 import { resolveBrowserStyle, type BrowserStyleName, type BrowserStyleTokens } from './style-profiles.js';
-import { formatDocx, extractDocxText } from './docx-formatting.js';
+import { formatDocx, extractDocxText, type DocxFormattingPlan } from './docx-formatting.js';
 
 export { extractDocxText } from './docx-formatting.js';
 
@@ -23,6 +23,9 @@ export interface BrowserResult {
 interface BrowserPresentation {
   bold?: boolean;
   italic?: boolean;
+  fontSize?: number;
+  fontFamily?: string;
+  color?: string;
 }
 
 interface BrowserFormattingOperation {
@@ -62,7 +65,7 @@ export async function requestFormattingPlan(source: BrowserSource, style: Browse
   const tokens = resolveBrowserStyle(style);
   const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({ contents: [{ parts: [{ text: `Return JSON only matching {"version":1,"operations":[{"kind":"set-presentation","nodeID":"p0","presentation":{"bold":true,"italic":false}}],"warnings":[]}. Use only existing node IDs. Presentation fields only: bold, italic. Do not change content. Style: ${JSON.stringify(tokens)}. Instructions: ${instructions.slice(0, 2000)}. Format: ${source.format}` }] }] }),
+    body: JSON.stringify({ contents: [{ parts: [{ text: `Return JSON only matching {"version":1,"operations":[{"kind":"set-presentation","nodeID":"p0","presentation":{"bold":true,"italic":false,"fontSize":12,"fontFamily":"Georgia","color":"#000000"}}],"warnings":[]}. Use only existing node IDs. Presentation fields only: bold, italic, fontSize (points), fontFamily (the exact family from the style tokens below), color (hex without #). Do not change content. Style: ${JSON.stringify(tokens)}. Instructions: ${instructions.slice(0, 2000)}. Format: ${source.format}` }] }] }),
   });
   if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
   const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
@@ -79,7 +82,12 @@ export async function formatSource(source: BrowserSource, plan: BrowserFormattin
   if (source.format === 'docx') {
     try {
       const bytes = await source.file.arrayBuffer();
-      const blob = await formatDocx(bytes, plan);
+      const docxPlan: DocxFormattingPlan = {
+        version: plan.version,
+        operations: plan.operations.map((operation) => ({ nodeID: operation.nodeID, ...operation.presentation })),
+        warnings: plan.warnings,
+      };
+      const blob = await formatDocx(bytes, docxPlan);
       return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: true, warnings: [] };
     } catch (error) {
       // If DOCX formatting fails, return the original file preserved

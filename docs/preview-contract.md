@@ -43,6 +43,22 @@ Preview `rendered`/`partial`/`unavailable`/`failed` status is independent of val
 `compareAvailable` and the export button are driven only by a fresh validation `pass` after a
 real package transformation. A preview status of `rendered` never implies export eligibility.
 
+## Post-AI content verification
+
+After the formatting plan is applied, the formatted output is re-extracted and compared against
+the source with order-sensitive token equality. 100% of the content must survive — a single
+word added, removed, reordered, or rewritten blocks export and preserves the original file.
+Whitespace, Markdown emphasis markers, and DOCX run properties (`bold`, `italic`, `fontSize`,
+`fontFamily`, `color`) are presentation and never affect the content verdict. The same exact
+check runs on macOS (`NativeValidationComparator`) and in the browser
+(`src/web/comparison/comparison-engine.ts`).
+
+## No-op detection
+
+When content passes exactly but the plan requested zero presentation changes, the UI shows the
+explicit "no style changes were applied — the result is identical to the source" state with a
+retry path, instead of pretending formatting happened.
+
 ## Known platform differences
 
 - The browser (JSZip) tolerates some ZIP corruption that `/usr/bin/unzip` rejects, so a

@@ -8,6 +8,7 @@ import { PreviewPanel } from '../components/PreviewPanel';
 import { ComparisonSummary } from '../components/ComparisonSummary';
 import { ExportActions } from '../components/ExportActions';
 import { readSource } from '../formatting';
+import { createLocalStorageKeyStore } from '../api-key-storage';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,13 @@ const STEPS: { panel: DashboardPanel; label: string; icon: typeof UploadCloud }[
 export function DashboardPage() {
   const { state, setActivePanel, setSource, setJobStatus, runFormatting } = useWorkflow();
   const { source, result, activePanel, jobStatus, jobMessage, jobProgress } = state;
+  const hasApiKey = !!createLocalStorageKeyStore().getKey();
+
+  const stepGate: Record<DashboardPanel, { available: boolean; reason: string | null }> = {
+    upload: { available: true, reason: null },
+    configure: { available: !!source, reason: source ? null : 'Select a document first.' },
+    review: { available: !!(source && result && result.validationStatus === 'pass'), reason: source && result ? 'Complete a formatting job with valid results first.' : 'Format a document to unlock review.' },
+  };
 
   useEffect(() => {
     const panel = panelFromSearch(window.location.search);
@@ -63,7 +71,7 @@ export function DashboardPage() {
         <p className="text-muted-foreground">Upload a document, choose a style, and review the formatted result — all in your browser.</p>
       </header>
 
-      <StepIndicator current={activePanel} onSelect={setActivePanel} />
+      <StepIndicator current={activePanel} onSelect={setActivePanel} gate={stepGate} />
 
       {activePanel === 'upload' && (
         <Card>
@@ -109,7 +117,7 @@ export function DashboardPage() {
                 <FormatControls />
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button variant="secondary" onClick={() => setActivePanel('upload')}>Back</Button>
-                  <Button onClick={handleStart} disabled={!state.disclosed || ['generating', 'validating'].includes(jobStatus)}>
+                  <Button onClick={handleStart} disabled={!state.disclosed || !hasApiKey || ['generating', 'validating'].includes(jobStatus)} title={!hasApiKey ? 'Add a Gemini API key in Settings first.' : undefined}>
                     {['generating', 'validating'].includes(jobStatus) ? 'Processing...' : 'Start Formatting'}
                   </Button>
                 </div>
@@ -153,22 +161,27 @@ export function DashboardPage() {
   );
 }
 
-function StepIndicator({ current, onSelect }: { current: DashboardPanel; onSelect: (panel: DashboardPanel) => void }) {
+function StepIndicator({ current, onSelect, gate }: { current: DashboardPanel; onSelect: (panel: DashboardPanel) => void; gate: Record<DashboardPanel, { available: boolean; reason: string | null }> }) {
   return (
     <ol className="flex flex-wrap items-center gap-2" aria-label="Progress">
       {STEPS.map((step, index) => {
         const Icon = step.icon;
         const isActive = current === step.panel;
         const isComplete = STEPS.findIndex((s) => s.panel === current) > index;
+        const { available, reason } = gate[step.panel];
         return (
           <li key={step.panel} className="flex flex-1 items-center gap-2">
             <button
               type="button"
               onClick={() => onSelect(step.panel)}
+              disabled={!available}
+              title={reason ?? undefined}
+              aria-disabled={!available}
               className={cn(
-                'flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                'flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99]',
                 isActive ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent',
-                isComplete && 'border-transparent bg-muted'
+                isComplete && 'border-transparent bg-muted',
+                !available && 'cursor-not-allowed border-transparent bg-muted text-muted-foreground opacity-60 hover:bg-muted'
               )}
             >
               <Icon className={cn('h-4 w-4', isActive && 'text-primary')} aria-hidden="true" />

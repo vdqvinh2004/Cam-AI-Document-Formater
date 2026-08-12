@@ -81,4 +81,34 @@ describe('browser DOCX preview', () => {
     expect(preview.text).toContain('Paragraph number 1599');
     expect(preview.featureCount).toBeGreaterThanOrEqual(1600);
   });
+
+  it('renders tables as tables in golden fixtures', async () => {
+    const preview = await buildDocxPreview(fixture('sample-rich.docx'));
+    expect(preview.html).toContain('<table><tbody>');
+    expect(preview.html).toContain('<tr>');
+    expect(preview.html).toContain('<td>Name</td>');
+    expect(preview.html).toContain('<td>Alpha</td>');
+    expect(preview.html).toContain('</table>');
+    const nameIndex = preview.text.indexOf('Name');
+    const alphaIndex = preview.text.indexOf('Alpha');
+    expect(nameIndex).toBeGreaterThanOrEqual(0);
+    expect(alphaIndex).toBeGreaterThan(nameIndex);
+  });
+
+  it('keeps heading and paragraph structure in golden fixtures', async () => {
+    const preview = await buildDocxPreview(fixture('sample-rich.docx'));
+    expect(preview.html).toContain('<h1>Sample Rich Document</h1>');
+    expect(preview.html).toContain('<h2>Introduction</h2>');
+    expect(preview.html).toContain('<p>');
+    expect(preview.html).not.toContain('<w:');
+    expect(preview.html).toContain('<table><tbody>');
+    expect(preview.html).toContain('<td>');
+  });
+
+  it('keeps unsupported-object fixtures partial without table markup', async () => {
+    const preview = await buildDocxPreview(fixture('unsupported-object.docx'));
+    expect(preview.status).toBe('partial');
+    expect(preview.html).not.toContain('<table');
+    expect(preview.html).not.toContain('oleObject');
+  });
 });

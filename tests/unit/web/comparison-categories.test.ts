@@ -9,11 +9,10 @@ describe('comparison categories', () => {
     expect(result.summary).toContain('preserved');
   });
 
-  it('separates presentation changes from content preservation', () => {
-    const body = 'word '.repeat(30).trim();
+  it('separates presentation-only structure changes from exact content preservation', () => {
     const result = compareDocuments({
-      sourceText: `# Heading\n${body}`,
-      resultText: `# Heading\n## New section\n${body}`,
+      sourceText: '# Title\nplain body',
+      resultText: '# Title\n# \nplain body',
       sourceFormat: 'markdown',
       resultFormat: 'markdown',
       validationStatus: 'pass',
@@ -34,7 +33,7 @@ describe('comparison categories', () => {
     });
     expect(result.status).toBe('content-changed');
     expect(result.rows[0].kind).toBe('content');
-    expect(result.summary).toContain('review before export');
+    expect(result.summary).toContain('Review before export');
   });
 
   it('returns explicit unavailable for PDF instead of guessing', () => {

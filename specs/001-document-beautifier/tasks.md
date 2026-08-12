@@ -954,6 +954,76 @@ unsupported OOXML feature must produce an explicit unavailable or partial-previe
 5. Record unsupported OOXML features and environment-specific renderer limitations rather than
    silently approximating document content.
 
+## Phase 13: Content-Exact Formatting Verification and Workspace UX
+
+**Purpose**: Formatting must change presentation only — the AI-formatted result must contain
+100% of the original content (not a "<10% difference" tolerance), the workspace flow must feel
+responsive and interactive, DOCX preview must match the real document layout, and silent
+no-op formatting must be caught and explained rather than handed off as a formatted file.
+Preview and comparison remain independent from validation-gated export.
+
+### Exact content preservation
+
+- [X] T182 [P] Replace the <10% word-count tolerance with an exact content-preservation check:
+  normalized, order-sensitive text-token equality (whitespace, Markdown markers, and DOCX run
+  properties count as presentation, not content) in `src/web/comparison/comparison-engine.ts`,
+  `tests/web/` coverage, and the native equivalent in
+  `macos/Sources/CamDocFormater/Services/ValidationComparator.swift`
+- [X] T183 [P] Add a post-AI verification step in `src/web/state/workflow-context.tsx` (and the
+  native `macos/Sources/CamDocFormater/Services/JobCoordinator.swift`): after the formatting
+  plan is applied, re-extract text from the formatted output (DOCX via `src/web/docx-formatting.ts`
+  and `macos/Sources/CamDocFormater/Features/Preview/DocxPreviewRenderer.swift`) and compare
+  exact-normalized content against the source; block export with a clear message when any
+  content differs
+- [X] T184 Add unit and end-to-end coverage: fixtures where the AI plan adds/removes/rewrites
+  words must fail the new exact check; style-only edits must pass; update
+  `tests/web/docx-preview.test.ts`, `tests/web/preview.spec.ts`, and
+  `macos/Tests/NativeWorkflowTests.swift`
+- [X] T185 Update comparison status copy from "<10%" to "100% content preserved" and document the
+  exact-preservation contract in `docs/format-support.md` and `docs/preview-contract.md`
+
+### Interactive workspace flow
+
+- [X] T186 [P] Step-gate the workspace flow (add API key → add file → choose style → review) in
+  `src/web/pages/WorkspacePage.tsx`, `src/web/state/workflow-context.tsx`, and native
+  `macos/Sources/CamDocFormater/Features/DocumentWorkflow/DocumentWorkflowViewModel.swift`:
+  later steps stay disabled until the previous prerequisite is complete, with a visible reason
+  for each disabled step
+- [X] T187 Add hover, active, and focus-visible states with consistent transitions to all
+  interactive elements (buttons in `src/web/components/ui/*`, nav, step indicators,
+  `src/web/styles/web.css`, native controls) that respect `prefers-reduced-motion`
+- [X] T188 Add accessibility and end-to-end coverage for step gating, keyboard focus, and
+  hover/active states in `tests/web/shadcn-flow.spec.ts`,
+  `tests/unit/web/shadcn-components.test.tsx`, and `macos/Tests/NativeAccessibilityTests.swift`
+
+### DOCX preview correctness
+
+- [X] T189 [P] Investigate the reported incorrect DOCX preview: compare the current extractor
+  (`src/web/docx-preview.ts`) against a real DOCX preview rendering (tables, images, borders,
+  fonts, layout); upgrade or replace the renderer so preview reflects the actual document
+  layout, keeping the fail-closed states from `docs/preview-contract.md` unchanged
+- [X] T190 Add fixture-based golden coverage that preview layout matches the real document
+  (tables render as tables, headings as headings, images placed) in `tests/web/docx-preview.test.ts`
+  and `macos/Tests/NativeContractsTests.swift`
+
+### No-op formatting investigation
+
+- [X] T191 [P] Trace why formatting can return a file that looks identical to the source: audit
+  the AI plan generation (`src/web/formatting.ts`), plan application and XML transformation
+  (`src/web/docx-formatting.ts`), the download path, and the native plan application; fix the
+  mapping when style changes are not applied, or surface an explicit "no changes applied" state
+  with a retry/regenerate option and record the root cause in
+  `specs/001-document-beautifier/quickstart.md`
+
+## Phase 13 Dependencies and Parallel Execution
+
+- **Phase 12 prerequisite**: T182-T191 depend on the completed DOCX preview contract, fixtures,
+  validation-gated export, and cross-product preview surfaces from Phase 12.
+- **Verification**: T182-T183 can proceed in parallel after the exact-normalization helper lands;
+  T184-T185 follow. T186-T188 are independent of T182-T185 and of T189-T190. T191 depends on both
+  the exact-content check (to prove no-op) and the final preview renderer. T181 verification
+  patterns apply to every Phase 13 change.
+
 ## Phase 11 Dependencies and Parallel Execution
 
 - **Phase 10 prerequisite**: T152-T165 depend on the completed native workflow, browser extraction,

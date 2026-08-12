@@ -45,6 +45,108 @@ test.describe('Progressive dashboard flow', () => {
   });
 });
 
+test.describe('Phase 13 step gating and interactive states', () => {
+  test('later steps stay disabled until their prerequisite completes', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+
+    const uploadStep = page.getByRole('button', { name: 'Upload', exact: true });
+    const configureStep = page.getByRole('button', { name: 'Configure', exact: true });
+    const reviewStep = page.getByRole('button', { name: 'Review', exact: true });
+    await expect(uploadStep).toBeEnabled();
+    await expect(configureStep).toBeDisabled();
+    await expect(reviewStep).toBeDisabled();
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Heading\nBody'),
+    });
+    await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
+    await expect(configureStep).toBeEnabled();
+    await expect(reviewStep).toBeDisabled();
+
+    await page.getByRole('checkbox').check();
+    await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }),
+      })
+    );
+    await page.getByRole('button', { name: 'Start Formatting' }).click();
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
+    await expect(reviewStep).toBeEnabled();
+  });
+
+  test('start formatting stays disabled until an API key is stored', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Heading\nBody'),
+    });
+    const start = page.getByRole('button', { name: 'Start Formatting' });
+    await expect(start).toBeDisabled();
+    await expect(start).toHaveAttribute('title', /API key in Settings/);
+  });
+
+  test('start formatting becomes enabled once an API key is stored', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Heading\nBody'),
+    });
+    const start = page.getByRole('button', { name: 'Start Formatting' });
+    await expect(start).toBeDisabled();
+    await page.getByRole('checkbox').check();
+    await expect(start).toBeEnabled();
+  });
+
+  test('hover and keyboard focus reach interactive controls', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Heading\nBody'),
+    });
+    const back = page.getByRole('button', { name: 'Back' });
+    await page.getByRole('checkbox').check();
+    const before = await back.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await back.hover();
+    await expect(back).not.toHaveCSS('background-color', before);
+
+    await page.getByRole('button', { name: 'Back' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Start Formatting' })).toBeFocused();
+  });
+
+  test('surfaces an explicit no-changes state when formatting changes nothing', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Heading\nBody'),
+    });
+    await page.getByRole('checkbox').check();
+    await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }),
+      })
+    );
+    await page.getByRole('button', { name: 'Start Formatting' }).click();
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('identical to the source');
+    await expect(page.locator('.comparison-summary')).toContainText('No style changes were applied');
+  });
+});
+
 test.describe('Deep-link compatibility', () => {
   test('/setup deep-link redirects to dashboard with configure panel', async ({ page }) => {
     await page.goto('/setup');

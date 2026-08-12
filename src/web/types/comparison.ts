@@ -16,4 +16,6 @@ export interface ComparisonEvidence {
   categories: ('content' | 'typography' | 'spacing' | 'layout' | 'structure' | 'assets' | 'unavailable')[];
   rows: ComparisonRow[];
   validation: ValidationStatus;
+  /** True when content is preserved exactly and no presentation change was detected at all. */
+  noChangesApplied?: boolean;
 }
