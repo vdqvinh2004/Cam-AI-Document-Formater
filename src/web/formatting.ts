@@ -72,8 +72,13 @@ function nodeMapLines(text: string): string[] {
   return entries;
 }
 
-const MAX_NODE_MAP_CHARS = 8000;
+const MAX_NODE_MAP_CHARS = 24000;
 
+/**
+ * Builds the node map sent to the AI. Heading entries always come first so the
+ * AI can target sections even in long documents whose paragraph entries would
+ * otherwise exhaust the character budget; paragraphs fill the remaining space.
+ */
 function buildNodeMap(source: BrowserSource, docx: { nodes: Array<{ nodeID: string; text: string }> } | null): string {
   const entries = source.format === 'markdown'
     ? nodeMapLines(source.text)
@@ -81,16 +86,18 @@ function buildNodeMap(source: BrowserSource, docx: { nodes: Array<{ nodeID: stri
       ? docx.nodes.map((node) => `${node.nodeID}: "${node.text.slice(0, 120).replaceAll('"', '\\"')}"`)
       : [];
   if (entries.length === 0) return '(no document nodes available)';
-  let map = entries.join('\n');
-  if (map.length > MAX_NODE_MAP_CHARS) {
-    const kept: string[] = [];
-    let length = 0;
-    for (const entry of entries) {
-      if (length + entry.length + 1 > MAX_NODE_MAP_CHARS) break;
-      kept.push(entry);
-      length += entry.length + 1;
-    }
-    map = `${kept.join('\n')}\n…(remaining nodes omitted)`;
+  const headings = entries.filter((entry) => entry.startsWith('h'));
+  const paragraphs = entries.filter((entry) => entry.startsWith('p'));
+  const kept: string[] = [];
+  let length = 0;
+  for (const entry of [...headings, ...paragraphs]) {
+    if (length + entry.length + 1 > MAX_NODE_MAP_CHARS) break;
+    kept.push(entry);
+    length += entry.length + 1;
+  }
+  let map = kept.join('\n');
+  if (kept.length < entries.length) {
+    map = `${map}\n…(remaining nodes omitted)`;
   }
   return map;
 }
@@ -142,7 +149,7 @@ export async function requestFormattingPlan(
     '- {"kind":"set-presentation","nodeID":"p3","presentation":{"bold":true,"italic":false,"fontSize":12,"fontFamily":"Georgia","color":"#000000"}}',
     '- {"kind":"move","nodeID":"h1","targetIndex":2}',
     '- {"kind":"rewrite-text","nodeID":"h1","text":"# 2.4 New heading"}',
-    'Use only the node IDs listed in "Document nodes"; a move relocates the whole section that starts at that node.',
+    'Use only the node IDs listed in "Document nodes"; a move relocates the whole section that starts at that node — the heading plus all content (paragraphs, tables) until the next heading.',
     `targetIndex must be an integer in [0, ${Math.max(0, blockCount - 1)}].`,
     'You may only set bold, italic, fontSize (6-72), fontFamily, color (hex without #), move a section to a different position, or rewrite a heading line.',
     'rewrite-text may only target a heading node (node IDs starting with h) and replaces the ENTIRE line: keep the "#" markers for Markdown, write plain text for DOCX; 1-200 characters.',
@@ -235,6 +242,7 @@ export interface CustomVerification {
 export async function verifyCustomResult(
   description: string,
   formattedText: string,
+  sourceText: string,
   format: BrowserSource['format'],
   apiKey: string,
   fetcher: typeof fetch = fetch
@@ -245,9 +253,13 @@ export async function verifyCustomResult(
     '- {"kind":"set-presentation","nodeID":"p3","presentation":{"bold":true}}',
     '- {"kind":"move","nodeID":"h1","targetIndex":2}',
     '- {"kind":"rewrite-text","nodeID":"h1","text":"# 2.4 New heading"} (headings only; the full replacement line)',
+    'Compare the source text with the formatted text to decide whether the user request was executed.',
+    'If the user request implies changes and the formatted text is identical to the source text, "matches" MUST be false.',
     'If the formatted text satisfies the user request, "matches" is true and "operations" is [].',
     `User request: ${description.slice(0, 2000)}.`,
     `Format: ${format}`,
+    '\nSource text:\n',
+    sourceText.slice(0, 12000),
     '\nFormatted text:\n',
     formattedText.slice(0, 12000),
   ].join(' ');
@@ -341,9 +353,14 @@ export async function runCustomFormatting(
     : new Set(source.text.split(/\r?\n/).map((line, index) => (/^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`)).filter((id) => id.startsWith('h')));
 
   let formatted = await formatSource(source, plan);
+  const sourceTextForVerify = source.format === 'markdown'
+    ? source.text
+    : source.format === 'docx'
+      ? await extractDocxText(await source.file.arrayBuffer())
+      : '';
   while (source.format === 'markdown' || source.format === 'docx') {
     onProgress?.({ progress: 65, message: 'Verifying the result matches your description…' });
-    const verification = await verifyCustomResult(workingDescription, await formattedTextFor(formatted), source.format, apiKey, fetcher);
+    const verification = await verifyCustomResult(workingDescription, await formattedTextFor(formatted), sourceTextForVerify, source.format, apiKey, fetcher);
     if (!verification) {
       verificationNote = 'AI verification was inconclusive; proceeding with the current result.';
       break;

@@ -26,7 +26,8 @@ function serializeXml(doc: Document): string {
 }
 
 function isHeadingParagraph(paragraph: Element): boolean {
-  return paragraph.getElementsByTagName('w:pStyle')[0]?.getAttribute('w:val')?.match(/Heading([1-6])/) !== null;
+  const val = paragraph.getElementsByTagName('w:pStyle')[0]?.getAttribute('w:val');
+  return typeof val === 'string' && /Heading([1-6])/.test(val);
 }
 
 /** Mirrors the nodeID counter scheme used by the plan appliers. */
@@ -59,7 +60,7 @@ export async function inspectDocx(source: ArrayBuffer): Promise<DocxInspection> 
   }
 
   const body = doc.getElementsByTagName('w:body')[0];
-  const blockCount = body ? Array.from(body.children).filter((child) => child.localName === 'p').length : 0;
+  const blockCount = body ? buildBodyBlocks(body).blocks.length : 0;
 
   return { paragraphNodeIDs, headingNodeIDs, blockCount, nodes };
 }
@@ -138,10 +139,8 @@ function applyPresentationToParagraph(paragraph: Element, presentation: BrowserP
 function applyRewriteTextToParagraph(paragraph: Element, text: string): void {
   const doc = paragraph.ownerDocument!;
   const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-  const runs = paragraph.getElementsByTagName('w:r');
-  for (let i = 0; i < runs.length; i++) {
-    paragraph.removeChild(runs[i]);
-  }
+  const runs = Array.from(paragraph.getElementsByTagName('w:r'));
+  for (const run of runs) paragraph.removeChild(run);
   const run = doc.createElementNS(ns, 'w:r');
   const textElement = doc.createElementNS(ns, 'w:t');
   textElement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
@@ -150,39 +149,77 @@ function applyRewriteTextToParagraph(paragraph: Element, text: string): void {
   paragraph.appendChild(run);
 }
 
-function reorderBodyParagraphs(doc: Document, moves: Array<{ nodeID: string; targetIndex: number }>): void {
+/** A movable unit in the body: a heading section or a run of leading content. */
+interface DocxBlock {
+  /** nodeID of the first element in the block ('' for a bare leading table). */
+  nodeID: string;
+  /** All node IDs assigned while building the block, in document order. */
+  nodeIDs: string[];
+  /** Body children (paragraphs and tables) that move together. */
+  elements: Element[];
+}
+
+/**
+ * Splits body children into movable blocks that mirror the Markdown block model:
+ * a block starts at a heading (or, before any heading, at a paragraph) and swallows
+ * all following paragraphs and tables until the next heading. Node IDs follow the
+ * same heading/paragraph counters used by inspectDocx and formatDocx so move
+ * operations resolved against an inspection stay valid here.
+ */
+function buildBodyBlocks(body: Element): { blocks: DocxBlock[]; loose: Element[] } {
+  const blocks: DocxBlock[] = [];
+  const loose: Element[] = [];
+  let current: DocxBlock | null = null;
+  let paragraphIndex = 0;
+  let headingIndex = 0;
+
+  const flush = () => {
+    if (current) {
+      blocks.push(current);
+      current = null;
+    }
+  };
+
+  for (const child of Array.from(body.children)) {
+    if (child.localName === 'p') {
+      const isHeading = isHeadingParagraph(child);
+      const nodeID = isHeading ? `h${headingIndex++}` : `p${paragraphIndex++}`;
+      if (isHeading) flush();
+      if (!current) current = { nodeID, nodeIDs: [], elements: [] };
+      current.nodeIDs.push(nodeID);
+      current.elements.push(child);
+    } else if (child.localName === 'tbl') {
+      if (!current) {
+        flush();
+        current = { nodeID: '', nodeIDs: [], elements: [child] };
+      } else {
+        current.elements.push(child);
+      }
+    } else {
+      flush();
+      loose.push(child);
+    }
+  }
+  flush();
+  return { blocks, loose };
+}
+
+function reorderBodyBlocks(doc: Document, moves: Array<{ nodeID: string; targetIndex: number }>): void {
   if (moves.length === 0) return;
   const body = doc.getElementsByTagName('w:body')[0];
   if (!body) return;
+  const { blocks, loose } = buildBodyBlocks(body);
 
-  const allChildren = Array.from(body.children);
-  const movable = allChildren.filter((child) => child.localName === 'p');
-
-  const nodeIDs = new Map<Element, string>();
-  let paragraphIndex = 0;
-  let headingIndex = 0;
-  for (const child of allChildren) {
-    if (child.localName !== 'p') continue;
-    nodeIDs.set(child, isHeadingParagraph(child) ? `h${headingIndex++}` : `p${paragraphIndex++}`);
-  }
-
-  let ordered = [...movable];
+  let ordered = blocks.slice();
   for (const move of moves) {
-    const fromIndex = ordered.findIndex((el) => nodeIDs.get(el) === move.nodeID);
+    const fromIndex = ordered.findIndex((block) => block.nodeIDs.includes(move.nodeID));
     if (fromIndex === -1) continue;
     const [block] = ordered.splice(fromIndex, 1);
     const target = Math.max(0, Math.min(move.targetIndex, ordered.length));
     ordered.splice(target, 0, block);
   }
 
-  const order = new Map<Element, Element>();
-  for (const el of movable) {
-    order.set(el, ordered[0] ?? el);
-    const pos = ordered.indexOf(el);
-    if (pos !== -1) ordered.splice(pos, 1);
-  }
-
-  body.replaceChildren(...allChildren.map((child) => (child.localName === 'p' ? order.get(child)! : child)));
+  body.replaceChildren(...ordered.flatMap((block) => block.elements), ...loose);
 }
 
 export async function formatDocx(source: ArrayBuffer, plan: { version: number; operations: BrowserFormattingOperation[] }): Promise<Blob> {
@@ -224,7 +261,7 @@ export async function formatDocx(source: ArrayBuffer, plan: { version: number; o
       applyPresentationToParagraph(paragraph, op.presentation);
     }
 
-    reorderBodyParagraphs(doc, moves);
+    reorderBodyBlocks(doc, moves);
 
     const updatedXml = serializeXml(doc);
     zip.file('word/document.xml', updatedXml);

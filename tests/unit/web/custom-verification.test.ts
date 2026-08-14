@@ -116,7 +116,7 @@ describe('clarifyCustomInstructions', () => {
 describe('verifyCustomResult', () => {
   it('parses a matching verification', async () => {
     const fetcher = stagedFetcher([{ when: () => true, text: JSON.stringify({ matches: true, reason: 'All requests satisfied', operations: [] }) }]);
-    const result = await verifyCustomResult('bold everything', 'text', 'markdown', 'key', fetcher);
+    const result = await verifyCustomResult('bold everything', 'text', 'source', 'markdown', 'key', fetcher);
     expect(result).toEqual({ matches: true, reason: 'All requests satisfied', operations: [] });
   });
 
@@ -125,9 +125,24 @@ describe('verifyCustomResult', () => {
       when: () => true,
       text: JSON.stringify({ matches: false, reason: 'Heading not renumbered', operations: [{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' }] }),
     }]);
-    const result = await verifyCustomResult('renumber headings', 'text', 'markdown', 'key', fetcher);
+    const result = await verifyCustomResult('renumber headings', 'text', 'source', 'markdown', 'key', fetcher);
     expect(result?.matches).toBe(false);
     expect(result?.operations).toEqual([{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' }]);
+  });
+
+  it('sends the source text so an unchanged result cannot be rubber-stamped', async () => {
+    let requestBody = '';
+    const fetcher = async (_url: string, init?: RequestInit) => {
+      requestBody = String(init?.body);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"matches":true,"reason":"ok","operations":[]}' }] } }] }), { status: 200 });
+    };
+    await verifyCustomResult('move section two before section one', 'FIRST\nSECOND', 'FIRST\nSECOND', 'markdown', 'key', fetcher as typeof fetch);
+    const promptText = JSON.parse(requestBody).contents[0].parts[0].text as string;
+    expect(promptText).toContain('Source text:');
+    expect(promptText).toContain('FIRST\nSECOND');
+    expect(promptText).toContain('Formatted text:');
+    expect(promptText).toContain('FIRST\nSECOND');
+    expect(promptText).toContain('formatted text is identical to the source text, "matches" MUST be false');
   });
 });
 

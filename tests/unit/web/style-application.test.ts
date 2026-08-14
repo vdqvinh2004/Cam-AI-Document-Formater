@@ -195,4 +195,22 @@ describe('custom style', () => {
     expect(promptText).toContain('Document nodes:');
     expect(promptText).not.toContain('Style: {"');
   });
+
+  it('keeps every heading in the node map even when paragraph entries exhaust the budget', async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 500; i++) lines.push(`Paragraph number ${i} with a fairly long line of body text to fill the node map budget quickly.`);
+    lines.push('## Tail Heading That Must Stay Visible');
+    lines.push('Closing paragraph.');
+    const source = mdSource(lines.join('\n'));
+    let requestBody = '';
+    const fetcher = async (_url: string, init?: RequestInit) => {
+      requestBody = String(init?.body);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }), { status: 200 });
+    };
+    await requestFormattingPlan(source, 'custom', 'move the tail section first', 'key', fetcher as typeof fetch);
+    const promptText = JSON.parse(requestBody).contents[0].parts[0].text as string;
+    expect(promptText).toContain(`h500: "## Tail Heading That Must Stay Visible"`);
+    expect(promptText).toContain('p0: "Paragraph number 0');
+    expect(promptText).toContain('(remaining nodes omitted)');
+  });
 });
