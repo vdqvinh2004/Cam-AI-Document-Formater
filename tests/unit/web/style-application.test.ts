@@ -161,11 +161,38 @@ describe('custom style', () => {
     ]);
   });
 
-  it('never treats valid custom formatting as no changes', async () => {
+  it('honors an empty AI plan when the user asked to keep the format unchanged', async () => {
     const source = mdSource(MD_TEXT);
-    const { plan } = await requestFormattingPlan(source, 'custom', 'make headings bold', 'key', async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }), { status: 200 }));
-    expect(plan.operations.length).toBeGreaterThan(0);
+    const { plan, aiUsed } = await requestFormattingPlan(source, 'custom', 'giữ nguyên format, chỉ đổi vị trí các mục', 'key', async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[],"warnings":[]}' }] } }] }), { status: 200 }));
+    expect(aiUsed).toBe(true);
+    expect(plan.operations).toEqual([]);
     const output = applyMarkdownPlan(MD_TEXT, plan);
-    expect(output).not.toBe(MD_TEXT);
+    expect(output).toBe(MD_TEXT);
+    const comparison = compareDocuments({
+      sourceText: MD_TEXT,
+      resultText: output,
+      sourceFormat: 'markdown',
+      resultFormat: 'markdown',
+      validationStatus: 'not-run',
+      appliedChanges: 0,
+      allowReorder: true,
+    });
+    expect(comparison.noChangesApplied).toBe(true);
+  });
+
+  it('sends the document node map in the Gemini prompt so the AI can target sections', async () => {
+    const source = mdSource(MD_TEXT);
+    let requestBody = '';
+    const fetcher = async (_url: string, init?: RequestInit) => {
+      requestBody = String(init?.body);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }), { status: 200 });
+    };
+    await requestFormattingPlan(source, 'custom', 'move section two before section one', 'key', fetcher as typeof fetch);
+    const promptText = JSON.parse(requestBody).contents[0].parts[0].text as string;
+    expect(promptText).toContain(`h0: "# Title"`);
+    expect(promptText).toContain(`p1: "First paragraph`);
+    expect(promptText).toContain('Instructions: move section two before section one');
+    expect(promptText).toContain('Document nodes:');
+    expect(promptText).not.toContain('Style: {"');
   });
 });

@@ -57,6 +57,23 @@ token must survive; block reordering alone is presentation (`presentation-change
 `content-changed`). The same exact check runs on macOS (`NativeValidationComparator`) and in
 the browser (`src/web/comparison/comparison-engine.ts`).
 
+Custom `rewrite-text` ops (heading renumbering/rephrasing, headings only) are surfaced as
+`expectedTextChanges`: the exact expected source line and its replacement line are stripped
+from the token comparison, so the planned rewrite registers as `presentation-changed` with a
+"Rewritten headings" row instead of blocking export. Any content difference that was not
+exactly expected still yields `content-changed` and blocks export.
+
+## AI quality verification (Custom style)
+
+Custom results run an additional AI loop: (1) the user description is clarified and its
+content-impact flagged; (2) the formatted output is verified against the clarified description;
+(3) corrective operations from a failed verification are screened with the same rules as the
+formatter output, merged into the plan, and re-applied — capped at 2 refinement rounds. The
+verification note ("AI verified the result matches your description." or a refinement/inconclusive
+message) is shown in the job status and the comparison summary. The verification note remains a
+UI signal, never a validation signal: export gating still
+depends only on the exact content comparison above.
+
 ## No-op detection
 
 When content passes exactly but the plan requested zero presentation changes, the UI shows the

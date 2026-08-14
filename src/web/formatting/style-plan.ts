@@ -10,7 +10,8 @@ export interface BrowserPresentation {
 
 export type BrowserFormattingOperation =
   | { kind: 'set-presentation'; nodeID: string; presentation: BrowserPresentation }
-  | { kind: 'move'; nodeID: string; targetIndex: number };
+  | { kind: 'move'; nodeID: string; targetIndex: number }
+  | { kind: 'rewrite-text'; nodeID: string; text: string };
 
 export interface BrowserFormattingPlan {
   version: 1;
@@ -117,8 +118,11 @@ export function hasEmphasisMarkers(line: string): boolean {
 }
 
 const COLOR_HEX = /^[0-9a-fA-F]{6}$/;
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/;
 
-export function screenAiPlan(aiPlan: BrowserFormattingPlan, validNodeIDs: Set<string>, blockCount: number): { plan: BrowserFormattingPlan; warnings: string[] } {
+export const MAX_REWRITE_TEXT_LENGTH = 200;
+
+export function screenAiPlan(aiPlan: BrowserFormattingPlan, validNodeIDs: Set<string>, blockCount: number, headingNodeIDs?: Set<string>): { plan: BrowserFormattingPlan; warnings: string[] } {
   const operations: BrowserFormattingOperation[] = [];
   const warnings: string[] = [];
 
@@ -169,6 +173,20 @@ export function screenAiPlan(aiPlan: BrowserFormattingPlan, validNodeIDs: Set<st
         continue;
       }
       operations.push({ kind: 'move', nodeID: op.nodeID, targetIndex: op.targetIndex });
+      continue;
+    }
+
+    if (op.kind === 'rewrite-text') {
+      if (!validNodeIDs.has(op.nodeID) || (headingNodeIDs !== undefined && !headingNodeIDs.has(op.nodeID))) {
+        warnings.push(`Ignored rewrite for unknown or non-heading node "${op.nodeID}".`);
+        continue;
+      }
+      const text = typeof op.text === 'string' ? op.text.trim() : '';
+      if (text.length === 0 || text.length > MAX_REWRITE_TEXT_LENGTH || CONTROL_CHARS.test(text)) {
+        warnings.push(`Ignored rewrite for "${op.nodeID}" with invalid text.`);
+        continue;
+      }
+      operations.push({ kind: 'rewrite-text', nodeID: op.nodeID, text });
       continue;
     }
 

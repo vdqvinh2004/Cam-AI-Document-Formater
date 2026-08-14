@@ -26,10 +26,9 @@ yarn test:e2e
 yarn build
 ```
 
-Latest validation (Wave 7 complete): `yarn typecheck` pass; `yarn lint` pass; `yarn test` —
-13 files, 102 tests; `yarn test:e2e` — 49 tests across shadcn-flow, browser-product, ui,
-docx-preview, and preview specs; `yarn build` — 221.46 kB bundle (70.07 kB gzip) plus vendor
-chunks.
+Latest validation (Wave 8 complete): `yarn typecheck` pass; `yarn lint` pass; `yarn test` —
+14 files, 116 tests; `yarn test:e2e` — 51 tests across shadcn-flow, browser-product, ui,
+docx-preview, and preview specs; `yarn build` pass.
 
 Focused regression checks must cover:
 
@@ -46,6 +45,8 @@ Focused regression checks must cover:
 11. Compare separates preserved content from presentation changes, reports `noChangesApplied` from the applied-op count, and uses a truthful unavailable state when evidence is insufficient.
 12. UI controls remain keyboard-accessible and usable at narrow viewport sizes; deep links `/setup` and `/review` redirect to the dashboard with the right panel.
 13. Source and generated document contents are absent from browser storage after reload/close; only the documented API-key storage remains.
+14. Custom style runs the AI quality loop: description clarify → format → verify → (refine up to 2 rounds). A mocked verify that first fails then matches applies the corrective `rewrite-text` to a heading, reports `Rewritten headings` in the comparison, shows "AI verified the result matches your description." in the status and comparison summary, and export stays enabled only when the content check passes.
+15. An intentional heading rewrite via `expectedTextChanges` strips exactly the expected source and replacement lines; any other content difference still blocks export.
 
 ## Manual DOCX scenario
 

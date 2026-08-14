@@ -10,6 +10,8 @@ export interface ComparisonInput {
   appliedChanges?: number;
   /** True when the style may structurally reorder blocks (Custom style). */
   allowReorder?: boolean;
+  /** Intended content edits (heading rewrites). Exact source lines are stripped before content comparison. */
+  expectedTextChanges?: Array<{ source: string; replacement: string }>;
 }
 
 const CONTENT_TOKEN_BREAKS: RegExp[] = [
@@ -29,6 +31,16 @@ export function normalizeContentTokens(text: string): string[] {
     cleaned.push(value.trim());
   }
   return cleaned.join(' ').split(/\s+/).filter((token) => token.length > 0);
+}
+
+/**
+ * Removes whole lines that exactly match an intended content edit (e.g. a renumbered heading),
+ * so the planned rewrite is not flagged as an unexpected content change.
+ */
+export function stripExpectedTextChanges(text: string, fragments: string[]): string {
+  const active = fragments.map((fragment) => fragment.trim()).filter((fragment) => fragment.length > 0);
+  if (active.length === 0) return text;
+  return text.split(/\r?\n/).filter((line) => !active.some((fragment) => line.trim() === fragment)).join('\n');
 }
 
 /** Order-sensitive exact token equality: 100% identical content, presentation ignored. */
@@ -60,9 +72,11 @@ function compareTextDocuments(
   includeMarkdownStructure: boolean,
   input: ComparisonInput
 ): ComparisonEvidence {
-  const { appliedChanges = 0, allowReorder = false, validationStatus } = input;
-  const sourceTokens = normalizeContentTokens(sourceText);
-  const resultTokens = normalizeContentTokens(resultText);
+  const { appliedChanges = 0, allowReorder = false, validationStatus, expectedTextChanges = [] } = input;
+  const sourceFragments = expectedTextChanges.map((change) => change.source);
+  const resultFragments = expectedTextChanges.map((change) => change.replacement);
+  const sourceTokens = normalizeContentTokens(stripExpectedTextChanges(sourceText, sourceFragments));
+  const resultTokens = normalizeContentTokens(stripExpectedTextChanges(resultText, resultFragments));
   const orderedExact = sourceTokens.length > 0 && tokensExact(sourceTokens, resultTokens);
   const completeWhenReordered = allowReorder && sourceTokens.length > 0 && tokensComplete(sourceTokens, resultTokens);
   const contentExact = allowReorder ? completeWhenReordered : orderedExact;
@@ -125,10 +139,21 @@ function compareTextDocuments(
     categories.push('structure');
   }
 
+  if (expectedTextChanges.length > 0) {
+    rows.push({
+      location: 'Rewritten headings',
+      kind: 'presentation',
+      before: expectedTextChanges.map((change) => change.source).join(' | '),
+      after: expectedTextChanges.map((change) => change.replacement).join(' | '),
+      explanation: 'Heading text was intentionally rewritten to match the custom style description',
+    });
+    categories.push('structure');
+  }
+
   if (appliedChanges > 0) categories.push('typography');
 
   const uniqueCategories = [...new Set(categories)];
-  const presentationChanges = reordered || appliedChanges > 0 || rows.some((row) => row.kind !== 'content');
+  const presentationChanges = reordered || expectedTextChanges.length > 0 || appliedChanges > 0 || rows.some((row) => row.kind !== 'content');
 
   let status: ComparisonStatus = 'preserved';
   if (!contentExact) status = 'content-changed';

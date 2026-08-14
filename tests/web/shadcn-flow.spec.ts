@@ -140,21 +140,70 @@ test.describe('Phase 13 step gating and interactive states', () => {
     await page.getByRole('checkbox').check();
     await page.getByPlaceholder(/Move the introduction after/).fill('Move the title section to the end');
 
-    await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
-      route.fulfill({
+    await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+      const body = route.request().postData() ?? '';
+      let text: string;
+      if (body.includes('verify a document-formatting')) {
+        text = JSON.stringify({ matches: true, reason: 'All requests satisfied', operations: [] });
+      } else if (body.includes('plan a document-formatting step')) {
+        text = JSON.stringify({ clarifiedDescription: 'Move the title section to the end', affectsContent: false, reason: '' });
+      } else {
+        text = JSON.stringify({ version: 1, operations: [{ kind: 'move', nodeID: 'h0', targetIndex: 1 }] });
+      }
+      await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
-          version: 1,
-          operations: [{ kind: 'move', nodeID: 'h0', targetIndex: 1 }],
-        }) }] } }] }),
-      })
-    );
+        body: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }),
+      });
+    });
 
     await page.getByRole('button', { name: 'Start Formatting' }).click();
     await expect(page.getByRole('status')).toContainText('Complete');
     await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
     await expect(page.locator('.comparison-summary')).toContainText('Section order');
+    await expect(page.getByTestId('verification-note')).toContainText('AI verified the result matches your description.');
+  });
+
+  test('custom style refines heading rewrites until the AI confirms a match', async ({ page }) => {
+    await openApp(page);
+    await page.addInitScript(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+    await uploadFile(page, {
+  name: 'notes.md',
+  mimeType: 'text/markdown',
+  buffer: Buffer.from('# Title\nFirst section.\n\nSecond section.'),
+    });
+    await page.getByRole('button', { name: /modern/i }).click();
+    await page.getByRole('menuitem', { name: 'Custom' }).click();
+    await page.getByRole('checkbox').check();
+    await page.getByPlaceholder(/Move the introduction after/).fill('Make headings bold and renumber the first one as 2.1');
+
+    let verifyCalls = 0;
+    await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+      const body = route.request().postData() ?? '';
+      let text: string;
+      if (body.includes('verify a document-formatting')) {
+        verifyCalls += 1;
+        text = verifyCalls === 1
+          ? JSON.stringify({ matches: false, reason: 'Wrong heading number', operations: [{ kind: 'rewrite-text', nodeID: 'h0', text: '# 2.1 Title' }] })
+          : JSON.stringify({ matches: true, reason: 'All requests satisfied', operations: [] });
+      } else if (body.includes('plan a document-formatting step')) {
+        text = JSON.stringify({ clarifiedDescription: 'Make headings bold and renumber the first one as 2.1', affectsContent: true, reason: 'Renumbering changes heading text' });
+      } else {
+        text = JSON.stringify({ version: 1, operations: [{ kind: 'set-presentation', nodeID: 'h0', presentation: { bold: true } }] });
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }),
+      });
+    });
+
+    await page.getByRole('button', { name: 'Start Formatting' }).click();
+    await expect(page.getByRole('status')).toContainText('Complete');
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
+    await expect(page.locator('.comparison-summary')).toContainText('Rewritten headings');
+    await expect(page.getByTestId('verification-note')).toContainText('AI verified the result matches your description.');
+    expect(verifyCalls).toBe(2);
   });
 
   test('hover and keyboard focus reach interactive controls', async ({ page }) => {

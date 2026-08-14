@@ -34,8 +34,8 @@ export function DocxPreviewPane({ blob, fallback, label }: DocxPreviewPaneProps)
         container.replaceChildren();
         await renderAsync(blob, container, undefined, {
           inWrapper: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
+          ignoreWidth: true,
+          ignoreHeight: true,
           renderHeaders: true,
           renderFooters: true,
           renderFootnotes: true,
@@ -75,7 +75,7 @@ export function DocxPreviewPane({ blob, fallback, label }: DocxPreviewPaneProps)
           {fallback?.warnings.length ? <p className="text-xs text-muted-foreground">{fallback.warnings.join(' ')}</p> : null}
         </div>
       )}
-      <div ref={containerRef} className={state === 'rendered' ? '' : 'hidden'} />
+      <div ref={containerRef} className={state === 'rendered' ? 'docx-preview-scroll' : 'hidden'} />
     </div>
   );
 }

@@ -39,7 +39,7 @@ As a macOS user, I want to choose among named formatting styles or define additi
 
 1. **Given** a valid document is loaded, **When** the user selects a named style, **Then** the application clearly indicates that style as active and uses it for generation.
 2. **Given** the Custom style is selected, **When** the user provides additional formatting instructions, **Then** the application includes those instructions in the formatting request and retains them until the current job is completed or reset.
-3. **Given** additional instructions request rewriting, adding, or removing content, **When** the user starts generation, **Then** the application rejects or safely ignores the content-changing instruction and informs the user that only formatting changes are supported.
+3. **Given** additional instructions request rewriting, adding, or removing content, **When** the user starts generation, **Then** the application rejects or safely ignores the content-changing instruction and informs the user that only formatting changes are supported, except that instructions which renumber or rephrase *headings only* may be applied as `rewrite-text` operations (full heading-line replacement, 1-200 characters, headings only); those exact expected lines are stripped from the content comparison so the intentional rewrite does not block export. Any other content change still blocks export.
 
 ---
 
@@ -97,7 +97,7 @@ unavailable messaging where rendering or comparison is unsafe.
 - The network is unavailable or the Gemini service is unavailable after the user requests generation.
 - The output file already exists at the chosen destination.
 - The user attempts to overwrite the source file or export before validation passes.
-- Custom instructions are ambiguous, conflict with the selected style, or ask for content changes.
+- Custom instructions are ambiguous, conflict with the selected style, or ask for content changes (beyond heading-only rewrites).
 - The application lacks a required macOS permission or cannot access the selected file or destination.
 
 ## Requirements *(mandatory)*

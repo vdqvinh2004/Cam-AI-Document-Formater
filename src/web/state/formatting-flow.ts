@@ -2,7 +2,7 @@ import type { WorkflowState, BrowserResult } from './workflow-context';
 import type { ComparisonEvidence } from '../types/comparison';
 import type { PreviewEvidence } from '../types/evidence';
 import type { JobMessage } from '../types/job';
-import { readSource, requestFormattingPlan, formatSource, extractDocxText } from '../formatting';
+import { readSource, requestFormattingPlan, formatSource, extractDocxText, runCustomFormatting } from '../formatting';
 import { compareDocuments } from '../comparison/comparison-engine';
 import { createSourcePreview, createResultPreview } from '../preview/preview-evidence-factory';
 import { createLocalStorageKeyStore } from '../api-key-storage';
@@ -44,11 +44,35 @@ export async function runFormattingJob(state: WorkflowState, api: FormattingFlow
     setJobStatus({ status: 'generating', message: requiresGemini ? 'Creating a formatting plan...' : 'Applying the style locally...', progress: 20 });
     const source = await readSource(state.source.file, state.source.arrayBuffer);
     const apiKey = requiresGemini ? createLocalStorageKeyStore().getKey() ?? '' : '';
-    const { plan, warnings, aiUsed } = await requestFormattingPlan(source, state.style, state.instructions, apiKey);
-    const mergedWarnings = [...warnings, aiUsed ? 'Custom style applied.' : 'Style applied locally.'];
 
-    setJobStatus({ status: 'validating', message: 'Applying and validating the formatting plan...', progress: 65 });
-    const formatted = await formatSource(source, plan);
+    let plan;
+    let formatted: Awaited<ReturnType<typeof formatSource>>;
+    let warnings: string[] = [];
+    let aiUsed = false;
+    let verificationNote: string | undefined;
+    let expectedTextChanges: Array<{ source: string; replacement: string }> | undefined;
+
+    if (requiresGemini) {
+      const outcome = await runCustomFormatting(source, state.instructions, apiKey, undefined, (stage) => {
+        setJobStatus({ status: stage.progress >= 60 ? 'validating' : 'generating', message: stage.message, progress: stage.progress });
+      });
+      plan = outcome.plan;
+      formatted = outcome.formatted;
+      warnings = outcome.warnings;
+      expectedTextChanges = outcome.expectedTextChanges;
+      verificationNote = outcome.verificationNote ?? undefined;
+      aiUsed = true;
+    } else {
+      const simple = await requestFormattingPlan(source, state.style, state.instructions, apiKey);
+      plan = simple.plan;
+      warnings = simple.warnings;
+      aiUsed = simple.aiUsed;
+      formatted = await formatSource(source, plan);
+    }
+
+    const mergedWarnings = [...warnings, aiUsed ? 'Custom style applied.' : 'Style applied locally.', verificationNote ? verificationNote : ''].filter(Boolean);
+
+    setJobStatus({ status: 'validating', message: 'Applying and validating the formatting plan...', progress: 85 });
     const formattingAvailable = formatted.previewAvailable && (formatted.format === 'markdown' || formatted.format === 'txt' || formatted.format === 'docx');
     const result: BrowserResult = {
       blob: formatted.blob,
@@ -57,6 +81,7 @@ export async function runFormattingJob(state: WorkflowState, api: FormattingFlow
       filename: formatted.filename,
       validationStatus: 'not-run',
       formattingAvailable,
+      verificationNote,
     };
 
     const sourceText = source.format === 'docx' ? await extractDocxText(state.source.arrayBuffer) : source.text;
@@ -67,7 +92,7 @@ export async function runFormattingJob(state: WorkflowState, api: FormattingFlow
       createResultPreview(formatted.blob, formatted.format, formattingAvailable),
     ]);
 
-    setJobStatus({ status: 'validating', message: 'Verifying that 100% of the content is preserved...', progress: 85 });
+    setJobStatus({ status: 'validating', message: 'Verifying that 100% of the content is preserved...', progress: 90 });
     const appliedChanges = plan.operations.length;
     const comparison = compareDocuments({
       sourceText,
@@ -77,6 +102,7 @@ export async function runFormattingJob(state: WorkflowState, api: FormattingFlow
       validationStatus: 'not-run',
       appliedChanges,
       allowReorder: state.style === 'custom',
+      expectedTextChanges,
     });
     const validationPassed = formattingAvailable && comparison.status !== 'content-changed' && comparison.status !== 'unavailable';
     const updatedResult: BrowserResult = { ...result, validationStatus: validationPassed ? 'pass' : 'fail' };

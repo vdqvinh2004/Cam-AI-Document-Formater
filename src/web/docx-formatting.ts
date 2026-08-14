@@ -5,6 +5,7 @@ export interface DocxInspection {
   paragraphNodeIDs: string[];
   headingNodeIDs: string[];
   blockCount: number;
+  nodes: Array<{ nodeID: string; text: string }>;
 }
 
 const MAX_PACKAGE_BYTES = 20 * 1024 * 1024;
@@ -38,21 +39,29 @@ export async function inspectDocx(source: ArrayBuffer): Promise<DocxInspection> 
   const paragraphs = doc.getElementsByTagName('w:p');
   const paragraphNodeIDs: string[] = [];
   const headingNodeIDs: string[] = [];
+  const nodes: Array<{ nodeID: string; text: string }> = [];
   let paragraphIndex = 0;
   let headingIndex = 0;
 
   for (let i = 0; i < paragraphs.length; i++) {
-    if (isHeadingParagraph(paragraphs[i])) {
-      headingNodeIDs.push(`h${headingIndex++}`);
+    const isHeading = isHeadingParagraph(paragraphs[i]);
+    const nodeID = isHeading ? `h${headingIndex++}` : `p${paragraphIndex++}`;
+    const text = Array.from(paragraphs[i].getElementsByTagName('w:t'))
+      .map((run) => run.textContent ?? '')
+      .join('')
+      .trim();
+    if (isHeading) {
+      headingNodeIDs.push(nodeID);
     } else {
-      paragraphNodeIDs.push(`p${paragraphIndex++}`);
+      paragraphNodeIDs.push(nodeID);
     }
+    nodes.push({ nodeID, text });
   }
 
   const body = doc.getElementsByTagName('w:body')[0];
   const blockCount = body ? Array.from(body.children).filter((child) => child.localName === 'p').length : 0;
 
-  return { paragraphNodeIDs, headingNodeIDs, blockCount };
+  return { paragraphNodeIDs, headingNodeIDs, blockCount, nodes };
 }
 
 function applyPresentation(rPr: Element, operation: BrowserFormattingOperation): void {
@@ -126,6 +135,21 @@ function applyPresentationToParagraph(paragraph: Element, presentation: BrowserP
   }
 }
 
+function applyRewriteTextToParagraph(paragraph: Element, text: string): void {
+  const doc = paragraph.ownerDocument!;
+  const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const runs = paragraph.getElementsByTagName('w:r');
+  for (let i = 0; i < runs.length; i++) {
+    paragraph.removeChild(runs[i]);
+  }
+  const run = doc.createElementNS(ns, 'w:r');
+  const textElement = doc.createElementNS(ns, 'w:t');
+  textElement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  textElement.textContent = text;
+  run.appendChild(textElement);
+  paragraph.appendChild(run);
+}
+
 function reorderBodyParagraphs(doc: Document, moves: Array<{ nodeID: string; targetIndex: number }>): void {
   if (moves.length === 0) return;
   const body = doc.getElementsByTagName('w:body')[0];
@@ -178,6 +202,9 @@ export async function formatDocx(source: ArrayBuffer, plan: { version: number; o
     const presentationOps = new Map(
       plan.operations.filter((op) => op.kind === 'set-presentation').map((op) => [op.nodeID, op as Extract<BrowserFormattingOperation, { kind: 'set-presentation' }>])
     );
+    const rewrites = new Map(
+      plan.operations.filter((op) => op.kind === 'rewrite-text').map((op) => [op.nodeID, (op as Extract<BrowserFormattingOperation, { kind: 'rewrite-text' }>).text])
+    );
     const moves = plan.operations.filter((op) => op.kind === 'move').map((op) => ({ nodeID: op.nodeID, targetIndex: (op as Extract<BrowserFormattingOperation, { kind: 'move' }>).targetIndex }));
 
     const paragraphs = doc.getElementsByTagName('w:p');
@@ -187,6 +214,11 @@ export async function formatDocx(source: ArrayBuffer, plan: { version: number; o
     for (let i = 0; i < paragraphs.length; i++) {
       const paragraph = paragraphs[i];
       const nodeID = isHeadingParagraph(paragraph) ? `h${headingIndex++}` : `p${paragraphIndex++}`;
+      const rewrite = rewrites.get(nodeID);
+      if (rewrite) {
+        applyRewriteTextToParagraph(paragraph, rewrite);
+        continue;
+      }
       const op = presentationOps.get(nodeID);
       if (!op) continue;
       applyPresentationToParagraph(paragraph, op.presentation);

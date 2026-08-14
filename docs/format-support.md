@@ -26,7 +26,20 @@ export are defined in [docs/preview-contract.md](preview-contract.md).
   on-device with `src/web/formatting/style-plan.ts` — no network call.
 - Custom style requires a non-empty description and a stored Gemini API key (plus the
   disclosure confirmation); it may emit structural `move` ops, which are screened for valid
-  nodeIDs, bounds, and presentation-only fields before application.
+  nodeIDs, bounds, and presentation-only fields before application. The Gemini prompt includes
+  the document node map (each line with its node ID), so section moves target the right nodes;
+  the custom plan is applied as returned by Gemini — no style is force-applied, so a request
+  to keep the formatting unchanged is honored.
+- Custom descriptions are first clarified by Gemini (rephrased into precise formatting steps,
+  with a content-impact warning when the request renumbers or rewrites headings), then the
+  formatted result is verified against the clarified description. A failed verification returns
+  corrective operations that are screened and merged back into the plan and re-applied, up to
+  a hard cap of 2 refinement rounds (3 verify calls); the verification outcome is shown in the
+  job status and the comparison summary.
+- `rewrite-text` ops (Custom style only) may retitle heading lines — full replacement line,
+  1-200 characters, headings only, `#` markers kept for Markdown, plain text for DOCX. The
+  comparison engine strips those exact expected heading lines (`expectedTextChanges`), so an
+  intentional renumbering does not block export; any other content change still does.
 - Exported files get the `_cam_formatted` suffix (`report_cam_formatted.docx`), used by
   `src/web/lib/filename.ts` in the Download action, Review header, and comparison summary.
 

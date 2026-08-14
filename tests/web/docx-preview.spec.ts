@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const docxFixture = readFileSync(join(__dirname, '..', 'fixtures', 'docx', 'sample-rich.docx'));
+const multipageFixture = readFileSync(join(__dirname, '..', 'fixtures', 'docx', 'multipage.docx'));
 
 test.describe('DOCX regression — full workflow with rich fixture', () => {
   test('uploads DOCX, renders source preview, formats, compares, validates, and downloads', async ({ page }) => {
@@ -48,6 +49,37 @@ test.describe('DOCX regression — full workflow with rich fixture', () => {
     await page.getByRole('button', { name: 'Download Formatted File' }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe('sample-rich_cam_formatted.docx');
+  });
+
+  test('renders multipage DOCX previews side by side without overlap', async ({ page }) => {
+    await uploadFile(page, {
+      name: 'multipage.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: multipageFixture,
+    });
+    await page.getByRole('button', { name: 'Start Formatting' }).click();
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
+    await expect(page.locator('.docx-preview-scroll')).toHaveCount(2);
+
+    const geometry = await page.evaluate(() => {
+      const columns = [...document.querySelectorAll('.preview-column')].map((column) => {
+        const rect = column.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      });
+      const docs = [...document.querySelectorAll('.docx-preview-scroll .docx')].map((doc) => {
+        const rect = doc.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      });
+      return { columns, docs, bodyScrollW: document.body.scrollWidth, innerW: window.innerWidth };
+    });
+
+    expect(geometry.columns).toHaveLength(2);
+    expect(geometry.docs).toHaveLength(2);
+    expect(geometry.docs[0].left).toBeGreaterThanOrEqual(geometry.columns[0].left - 1);
+    expect(geometry.docs[0].right).toBeLessThanOrEqual(geometry.columns[0].right + 1);
+    expect(geometry.docs[1].right).toBeLessThanOrEqual(geometry.columns[1].right + 1);
+    expect(geometry.docs[0].right).toBeLessThanOrEqual(geometry.docs[1].left + 1);
+    expect(geometry.bodyScrollW).toBeLessThanOrEqual(geometry.innerW + 1);
   });
 
   test('rejects unsupported files without sending a request', async ({ page }) => {

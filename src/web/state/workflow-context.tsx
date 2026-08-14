@@ -23,6 +23,7 @@ export interface BrowserResult {
   filename?: string;
   validationStatus: 'pass' | 'fail' | 'inconclusive' | 'not-run';
   formattingAvailable: boolean;
+  verificationNote?: string;
 }
 
 export interface WorkflowState {

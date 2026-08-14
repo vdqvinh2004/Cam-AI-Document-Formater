@@ -127,4 +127,14 @@ body {
   .focus-visible-ring {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
+
+  .docx-preview-scroll {
+    overflow: auto;
+    max-height: 70vh;
+  }
+
+  .docx-preview-scroll .docx {
+    width: 100%;
+    min-height: 0;
+  }
 }

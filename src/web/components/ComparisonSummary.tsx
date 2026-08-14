@@ -27,6 +27,7 @@ export function ComparisonSummary({ source, result }: { source: BrowserSource; r
         {!sameFormat && <p className="text-warning">The output format differs from the source format.</p>}
         {!formattingAvailable && <p className="text-warning">The original document was preserved unchanged. No formatting transformation was performed.</p>}
         {comparison?.noChangesApplied && <p className="text-warning">No style changes were applied — the result is identical to the source. Try another style or adjust your instructions.</p>}
+        {result.verificationNote && <p className="text-foreground" data-testid="verification-note">{result.verificationNote}</p>}
         {comparison && <>
           <p>{comparison.summary}</p>
           <ul className="list-disc space-y-1 pl-5">

@@ -1,0 +1,249 @@
+import { describe, expect, it } from 'vitest';
+import { applyMarkdownPlan, clarifyCustomInstructions, runCustomFormatting, verifyCustomResult, type BrowserSource } from '../../../src/web/formatting';
+import { compareDocuments } from '../../../src/web/comparison/comparison-engine';
+import { screenAiPlan } from '../../../src/web/formatting/style-plan';
+import { extractDocxText, formatDocx } from '../../../src/web/docx-formatting';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+function mdSource(text: string): BrowserSource {
+  const file = new File([text], 'notes.md', { type: 'text/markdown' });
+  return { file, format: 'markdown', text, sourceHash: 'hash' };
+}
+
+const MD_TEXT = '# Title\nFirst paragraph of the document.\n\n## Section One\nMore body text here.\n\n- list item one\n- list item two';
+
+function stagedFetcher(stages: Array<{ when: (body: string) => boolean; text: string; consume?: boolean }>): typeof fetch {
+  return (async (_url: string, init?: RequestInit) => {
+    const body = String(init?.body);
+    const index = stages.findIndex((stage) => stage.when(body));
+    const match = index === -1 ? undefined : stages[index];
+    if (match?.consume) stages.splice(index, 1);
+    const text = match?.text ?? '{"version":1,"operations":[]}';
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+}
+
+const planText = (plan: unknown) => JSON.stringify(plan);
+
+describe('rewrite-text screening and application', () => {
+  it('keeps rewrite-text operations that target known headings', () => {
+    const nodes = new Set(['h0', 'h3', 'p1', 'p4']);
+    const headings = new Set(['h0', 'h3']);
+    const { plan, warnings } = screenAiPlan(
+      { version: 1, operations: [{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' } as never], warnings: [] },
+      nodes,
+      6,
+      headings
+    );
+    expect(warnings).toEqual([]);
+    expect(plan.operations).toEqual([{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' }]);
+  });
+
+  it('rejects rewrite-text for paragraphs, unknown nodes, and invalid text', () => {
+    const nodes = new Set(['h0', 'p1']);
+    const headings = new Set(['h0']);
+    const { plan, warnings } = screenAiPlan(
+      {
+        version: 1,
+        warnings: [],
+        operations: [
+          { kind: 'rewrite-text', nodeID: 'p1', text: 'body rewrite' } as never,
+          { kind: 'rewrite-text', nodeID: 'nope', text: 'ghost' } as never,
+          { kind: 'rewrite-text', nodeID: 'h0', text: '   ' } as never,
+          { kind: 'rewrite-text', nodeID: 'h0', text: 'x'.repeat(201) } as never,
+        ],
+      },
+      nodes,
+      4,
+      headings
+    );
+    expect(warnings).toHaveLength(4);
+    expect(plan.operations).toEqual([]);
+  });
+
+  it('applies rewrite-text by replacing the full Markdown heading line', () => {
+    const plan = {
+      version: 1,
+      operations: [
+        { kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' },
+        { kind: 'rewrite-text', nodeID: 'h0', text: '# Renumbered Title' },
+      ],
+      warnings: [],
+    };
+    const output = applyMarkdownPlan(MD_TEXT, plan);
+    expect(output).toContain('# Renumbered Title');
+    expect(output).toContain('# 2.4 Section One');
+    expect(output).toContain('First paragraph of the document.');
+    expect(output.split(/\r?\n/)).toHaveLength(MD_TEXT.split(/\r?\n/).length);
+  });
+
+  it('rewrites a DOCX heading text while keeping the paragraph structure and body paragraphs', async () => {
+    const buffer = readFileSync(join(__dirname, '..', '..', 'fixtures', 'docx', 'sample-rich.docx'));
+    const bytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const sourceText = await extractDocxText(bytes);
+
+    const rewriteOp = { kind: 'rewrite-text', nodeID: 'h0', text: 'Renumbered Title' };
+    const blob = await formatDocx(bytes, { version: 1, operations: [rewriteOp] });
+    const resultText = await extractDocxText(await blob.arrayBuffer());
+
+    expect(resultText).toContain('Renumbered Title');
+    expect(resultText).not.toContain(sourceText.split('\n')[0]);
+    expect(resultText.split('\n').length).toBe(sourceText.split('\n').length);
+  });
+});
+
+describe('clarifyCustomInstructions', () => {
+  it('parses clarified description and content-impact flag', async () => {
+    const fetcher = stagedFetcher([{
+      when: () => true,
+      text: JSON.stringify({ clarifiedDescription: 'Make all headings bold, 16pt, and renumber them in order', affectsContent: true, reason: 'Renumbering changes heading text' }),
+    }]);
+    const result = await clarifyCustomInstructions('in đậm tiêu đề và đánh số lại', 'markdown', 'key', fetcher);
+    expect(result).toEqual({
+      clarifiedDescription: 'Make all headings bold, 16pt, and renumber them in order',
+      affectsContent: true,
+      reason: 'Renumbering changes heading text',
+    });
+  });
+
+  it('returns null when the AI responds with invalid JSON', async () => {
+    const fetcher = stagedFetcher([{ when: () => true, text: 'not json at all' }]);
+    expect(await clarifyCustomInstructions('make it nice', 'markdown', 'key', fetcher)).toBeNull();
+  });
+});
+
+describe('verifyCustomResult', () => {
+  it('parses a matching verification', async () => {
+    const fetcher = stagedFetcher([{ when: () => true, text: JSON.stringify({ matches: true, reason: 'All requests satisfied', operations: [] }) }]);
+    const result = await verifyCustomResult('bold everything', 'text', 'markdown', 'key', fetcher);
+    expect(result).toEqual({ matches: true, reason: 'All requests satisfied', operations: [] });
+  });
+
+  it('parses corrective operations from a failed verification', async () => {
+    const fetcher = stagedFetcher([{
+      when: () => true,
+      text: JSON.stringify({ matches: false, reason: 'Heading not renumbered', operations: [{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' }] }),
+    }]);
+    const result = await verifyCustomResult('renumber headings', 'text', 'markdown', 'key', fetcher);
+    expect(result?.matches).toBe(false);
+    expect(result?.operations).toEqual([{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' }]);
+  });
+});
+
+describe('runCustomFormatting', () => {
+  it('clarifies, formulates, verifies, and refines once until the result matches', async () => {
+    const fetcher = stagedFetcher([
+      {
+        when: (body) => body.includes('plan a document-formatting step'),
+        text: JSON.stringify({ clarifiedDescription: 'Move the title section down and renumber section headings', affectsContent: true, reason: 'Renumbering changes heading text' }),
+      },
+      {
+        when: (body) => body.includes('Return JSON only matching'),
+        text: planText({
+          version: 1,
+          operations: [
+            { kind: 'move', nodeID: 'h0', targetIndex: 2 },
+            { kind: 'rewrite-text', nodeID: 'h3', text: '# 2.1 Section One' },
+          ],
+          warnings: [],
+        }),
+      },
+      {
+        when: (body) => body.includes('verify a document-formatting'),
+        text: JSON.stringify({ matches: false, reason: 'Wrong heading number', operations: [{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.4 Section One' }] }),
+        consume: true,
+      },
+      {
+        when: (body) => body.includes('verify a document-formatting'),
+        text: JSON.stringify({ matches: true, reason: 'All requests satisfied', operations: [] }),
+        consume: true,
+      },
+    ]);
+
+    const outcome = await runCustomFormatting(mdSource(MD_TEXT), 'move the title down and renumber sections', 'key', fetcher);
+    expect(outcome.refinements).toBe(1);
+    expect(outcome.verificationNote).toBe('AI verified the result matches your description.');
+    expect(outcome.clarificationAffectsContent).toBe(true);
+    expect(outcome.warnings.some((w) => w.includes('Renumbering changes heading text'))).toBe(true);
+    expect(outcome.expectedTextChanges).toEqual([{ source: '## Section One', replacement: '# 2.4 Section One' }]);
+
+    const outputText = await outcome.formatted.blob.text();
+    expect(outputText).toContain('# 2.4 Section One');
+    expect(outcome.plan.operations.some((op) => op.kind === 'move')).toBe(true);
+    expect(outcome.plan.operations.some((op) => op.kind === 'rewrite-text')).toBe(true);
+  });
+
+  it('caps refinement at two rounds even when the AI never reports a match', async () => {
+    const fetcher = stagedFetcher([
+      {
+        when: (body) => body.includes('plan a document-formatting step'),
+        text: JSON.stringify({ clarifiedDescription: 'Renumber all headings', affectsContent: true, reason: '' }),
+      },
+      {
+        when: (body) => body.includes('Return JSON only matching'),
+        text: planText({ version: 1, operations: [{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.1 Section One' }], warnings: [] }),
+      },
+      {
+        when: (body) => body.includes('verify a document-formatting'),
+        text: JSON.stringify({ matches: false, reason: 'Still wrong', operations: [{ kind: 'rewrite-text', nodeID: 'h3', text: '# 2.2 Section One' }] }),
+      },
+    ]);
+
+    const outcome = await runCustomFormatting(mdSource(MD_TEXT), 'renumber all headings', 'key', fetcher);
+    expect(outcome.refinements).toBe(2);
+    expect(outcome.verificationNote).toBe('The result could not fully match your description after refinements; reviewing the last result.');
+  });
+
+  it('screens corrective operations before merging them', async () => {
+    const fetcher = stagedFetcher([
+      {
+        when: (body) => body.includes('plan a document-formatting step'),
+        text: JSON.stringify({ clarifiedDescription: 'Rename the title', affectsContent: true, reason: '' }),
+      },
+      {
+        when: (body) => body.includes('Return JSON only matching'),
+        text: planText({ version: 1, operations: [], warnings: [] }),
+      },
+      {
+        when: (body) => body.includes('verify a document-formatting'),
+        text: JSON.stringify({ matches: false, reason: 'Rewrite a paragraph', operations: [{ kind: 'rewrite-text', nodeID: 'p1', text: 'paragraph text' }] }),
+      },
+    ]);
+
+    const outcome = await runCustomFormatting(mdSource(MD_TEXT), 'rename the title', 'key', fetcher);
+    expect(outcome.refinements).toBe(0);
+    expect(outcome.verificationNote).toBe('AI verification could not suggest corrective changes; proceeding with the current result.');
+  });
+
+  it('strips expected rewrites from content comparison so renumbering does not block export', async () => {
+    const sourceText = MD_TEXT;
+    const resultText = MD_TEXT.replace('## Section One', '# 2.4 Section One');
+
+    const comparison = compareDocuments({
+      sourceText,
+      resultText,
+      sourceFormat: 'markdown',
+      resultFormat: 'markdown',
+      validationStatus: 'not-run',
+      appliedChanges: 1,
+      allowReorder: true,
+      expectedTextChanges: [{ source: '## Section One', replacement: '# 2.4 Section One' }],
+    });
+    expect(comparison.status).toBe('presentation-changed');
+    expect(comparison.rows.some((row) => row.location === 'Rewritten headings')).toBe(true);
+  });
+
+  it('still flags content edits that were not expected', async () => {
+    const comparison = compareDocuments({
+      sourceText: MD_TEXT,
+      resultText: MD_TEXT.replace('More body text here.', 'Replaced body text.'),
+      sourceFormat: 'markdown',
+      resultFormat: 'markdown',
+      validationStatus: 'not-run',
+      appliedChanges: 1,
+      allowReorder: true,
+    });
+    expect(comparison.status).toBe('content-changed');
+  });
+});

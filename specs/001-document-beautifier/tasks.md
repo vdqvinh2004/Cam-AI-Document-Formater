@@ -102,6 +102,16 @@ filenames, and split components/services for maintainability.
 - [x] T229 Run `yarn typecheck && yarn lint && yarn test && yarn test:e2e && yarn build`; record results in `specs/001-document-beautifier/quickstart.md`
 - [x] T230 Update `docs/format-support.md`, `docs/preview-contract.md`, `CHANGELOG.md`
 
+### Phase 8 - AI quality verification loop for Custom style
+- [x] T231 Add `rewrite-text` op to `style-plan.ts`: headings-only screening (node exists, starts with `h`), 1-200 printable chars, full replacement line
+- [x] T232 Apply `rewrite-text` in Markdown (full-line replacement with `#` markers) and DOCX (replace runs with a single `w:r`/`w:t`, keep `w:pPr`)
+- [x] T233 Extract `geminiCall` helper; add `clarifyCustomInstructions` (description rephrase + `affectsContent`/reason) and `verifyCustomResult` (matches flag + corrective ops) in `formatting.ts`
+- [x] T234 `runCustomFormatting` orchestration: clarify → plan → verify/refine loop with corrective ops re-screened and merged, hard cap 2 refinement rounds, progress stages 10 → 20 → 65 → 70+(n/2) → 90 → 100
+- [x] T235 Comparison engine: `expectedTextChanges` strips exact expected heading lines; "Rewritten headings" row; unintended content changes still block export
+- [x] T236 Surface verification in `formatting-flow.ts` (job messages + `verificationNote` on the result) and `ComparisonSummary.tsx` (`data-testid="verification-note"`)
+- [x] T237 Tests: `tests/unit/web/custom-verification.test.ts` (screening, apply, clarify, verify, loop cap, correction screening, comparison stripping); stage-aware Gemini mocks in `tests/web/shadcn-flow.spec.ts` (move flow + renumber refinement e2e)
+- [x] T238 Run `yarn typecheck && yarn lint && yarn test && yarn test:e2e && yarn build`; update `docs/format-support.md`, `docs/preview-contract.md`, `CHANGELOG.md`, `quickstart.md`
+
 ---
 
 ## Verification Commands

@@ -194,6 +194,15 @@ style-matrix test suite proves each style formats differently while preserving 1
 - **Custom allows reorder**: per product decision, Custom may move sections. Comparison switches to an
   order-insensitive-but-complete (multiset) content check when moves are present; presentation moves are
   listed as structural changes; any loss of content still blocks export.
+- **Custom AI quality loop**: the description is clarified by Gemini (with a content-impact warning),
+  the formatted result is verified against the clarified description, and corrective operations are
+  screened and re-applied up to 2 refinement rounds (hard cap). Verification outcome is an UI signal in
+  the job status and comparison summary — never a validation signal; export gating stays on the exact
+  content comparison.
+- **Heading-only rewrites**: per product decision, Custom may renumber/rephrase heading lines via
+  `rewrite-text` ops (headings only, full replacement line, 1-200 chars). The comparison engine strips
+  exactly those expected lines (`expectedTextChanges`) so the intentional rewrite reports
+  `presentation-changed`; any other content change still blocks export.
 - **Filename suffix**: `_cam_formatted` (corrected spelling), inserted before the last extension.
 - **DOCX preview**: `docx-preview.renderAsync` renders into the live preview container for source and
   result; text extraction for comparison stays in the evidence path; fail-closed states remain.

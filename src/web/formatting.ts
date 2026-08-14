@@ -31,6 +31,7 @@ export interface BrowserResult {
   contentPreserved: boolean;
   previewAvailable: boolean;
   warnings: string[];
+  verificationNote?: string;
 }
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -52,13 +53,46 @@ export async function readSource(file: File, bytes?: ArrayBuffer): Promise<Brows
   return { file, format, text: format === 'txt' || format === 'markdown' ? new TextDecoder().decode(buffer) : '', sourceHash: await hashBytes(buffer) };
 }
 
-async function docxNodeLists(source: BrowserSource): Promise<{ paragraphNodeIDs: string[]; headingNodeIDs: string[]; blockCount: number } | null> {
+async function docxNodeLists(source: BrowserSource): Promise<{ paragraphNodeIDs: string[]; headingNodeIDs: string[]; blockCount: number; nodes: Array<{ nodeID: string; text: string }> } | null> {
   if (source.format !== 'docx') return null;
   try {
     return await inspectDocx(await source.file.arrayBuffer());
   } catch {
     return null;
   }
+}
+
+function nodeMapLines(text: string): string[] {
+  const entries: string[] = [];
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    if (line.trim() === '') continue;
+    const nodeID = /^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`;
+    entries.push(`${nodeID}: "${line.trim().slice(0, 120).replaceAll('"', '\\"')}"`);
+  }
+  return entries;
+}
+
+const MAX_NODE_MAP_CHARS = 8000;
+
+function buildNodeMap(source: BrowserSource, docx: { nodes: Array<{ nodeID: string; text: string }> } | null): string {
+  const entries = source.format === 'markdown'
+    ? nodeMapLines(source.text)
+    : source.format === 'docx' && docx
+      ? docx.nodes.map((node) => `${node.nodeID}: "${node.text.slice(0, 120).replaceAll('"', '\\"')}"`)
+      : [];
+  if (entries.length === 0) return '(no document nodes available)';
+  let map = entries.join('\n');
+  if (map.length > MAX_NODE_MAP_CHARS) {
+    const kept: string[] = [];
+    let length = 0;
+    for (const entry of entries) {
+      if (length + entry.length + 1 > MAX_NODE_MAP_CHARS) break;
+      kept.push(entry);
+      length += entry.length + 1;
+    }
+    map = `${kept.join('\n')}\n…(remaining nodes omitted)`;
+  }
+  return map;
 }
 
 function validNodeIDsFor(source: BrowserSource, docx: { paragraphNodeIDs: string[]; headingNodeIDs: string[] } | null): Set<string> {
@@ -107,25 +141,23 @@ export async function requestFormattingPlan(
     'Operations must be one of:',
     '- {"kind":"set-presentation","nodeID":"p3","presentation":{"bold":true,"italic":false,"fontSize":12,"fontFamily":"Georgia","color":"#000000"}}',
     '- {"kind":"move","nodeID":"h1","targetIndex":2}',
-    'Use only existing node IDs: headings are h<i> (i = line or paragraph index), paragraphs are p<i>.',
+    '- {"kind":"rewrite-text","nodeID":"h1","text":"# 2.4 New heading"}',
+    'Use only the node IDs listed in "Document nodes"; a move relocates the whole section that starts at that node.',
     `targetIndex must be an integer in [0, ${Math.max(0, blockCount - 1)}].`,
-    'You may only set bold, italic, fontSize (6-72), fontFamily, color (hex without #), or move a section to a different position.',
-    'Never add, delete, or rewrite any text.',
-    `Style: ${JSON.stringify(tokens)}.`,
+    'You may only set bold, italic, fontSize (6-72), fontFamily, color (hex without #), move a section to a different position, or rewrite a heading line.',
+    'rewrite-text may only target a heading node (node IDs starting with h) and replaces the ENTIRE line: keep the "#" markers for Markdown, write plain text for DOCX; 1-200 characters.',
+    'Never add or delete lines, and never rewrite paragraph text.',
+    'If the user asks to keep the current formatting, emit no set-presentation operations; emit only the requested move operations.',
+    style === 'custom'
+      ? 'Style: follow the user instructions exactly; restyle only where the instructions describe new formatting.'
+      : `Style: ${JSON.stringify(tokens)}.`,
     `Instructions: ${description.slice(0, 2000)}.`,
     `Format: ${source.format}`,
+    '\nDocument nodes:\n',
+    buildNodeMap(source, docx),
   ].join(' ');
 
-  const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-  });
-  if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
-
-  const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const rawPlan = payload.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '').trim();
-  if (!rawPlan) throw new Error('Gemini returned an empty formatting plan.');
+  const rawPlan = await geminiCall(prompt, apiKey, fetcher);
 
   let aiPlan: BrowserFormattingPlan;
   try {
@@ -135,10 +167,218 @@ export async function requestFormattingPlan(
   }
   if (aiPlan.version !== 1 || !Array.isArray(aiPlan.operations)) throw new Error('Gemini returned an unsupported formatting plan.');
 
-  const { plan: screened, warnings: screeningWarnings } = screenAiPlan(aiPlan, validNodeIDsFor(source, docx), blockCount);
+  const headingNodeIDs = style === 'custom'
+    ? source.format === 'docx' && docx
+      ? new Set(docx.headingNodeIDs)
+      : new Set(source.text.split(/\r?\n/).map((line, index) => (/^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`)).filter((id) => id.startsWith('h')))
+    : undefined;
+  const { plan: screened, warnings: screeningWarnings } = screenAiPlan(aiPlan, validNodeIDsFor(source, docx), blockCount, headingNodeIDs);
   warnings.push(...screeningWarnings);
-  const plan = mergePlans(base, screened);
+  const plan = style === 'custom' ? screened : mergePlans(base, screened);
   return { plan, warnings, aiUsed: true };
+}
+
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+
+async function geminiCall(prompt: string, apiKey: string, fetcher: typeof fetch): Promise<string> {
+  const response = await fetcher(GEMINI_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+  if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
+  const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  const raw = payload.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '').trim();
+  if (!raw) throw new Error('Gemini returned an empty response.');
+  return raw;
+}
+
+export interface CustomClarification {
+  clarifiedDescription: string;
+  affectsContent: boolean;
+  reason: string;
+}
+
+export async function clarifyCustomInstructions(
+  description: string,
+  format: BrowserSource['format'],
+  apiKey: string,
+  fetcher: typeof fetch = fetch
+): Promise<CustomClarification | null> {
+  const prompt = [
+    'You plan a document-formatting step for another AI. Return JSON only: {"clarifiedDescription":"...","affectsContent":true,"reason":"..."}',
+    'Rephrase the user request into precise, unambiguous formatting steps (typography, spacing, section order).',
+    'Set "affectsContent" to true when executing the request would change the actual text content — adding, deleting, rewording, or renumbering headings. Set it false when only typography, emphasis, or section order change.',
+    `User request: ${description.slice(0, 2000)}.`,
+    `Format: ${format}`,
+  ].join(' ');
+  try {
+    const raw = await geminiCall(prompt, apiKey, fetcher);
+    const parsed = JSON.parse(raw) as Partial<CustomClarification>;
+    if (typeof parsed.clarifiedDescription !== 'string' || !parsed.clarifiedDescription.trim()) return null;
+    return {
+      clarifiedDescription: parsed.clarifiedDescription.trim().slice(0, 2000),
+      affectsContent: parsed.affectsContent === true,
+      reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 500) : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface CustomVerification {
+  matches: boolean;
+  reason: string;
+  operations: BrowserFormattingOperation[];
+}
+
+export async function verifyCustomResult(
+  description: string,
+  formattedText: string,
+  format: BrowserSource['format'],
+  apiKey: string,
+  fetcher: typeof fetch = fetch
+): Promise<CustomVerification | null> {
+  const prompt = [
+    'You verify a document-formatting step. Return JSON only: {"matches":true,"reason":"...","operations":[]}',
+    'Operations (only when "matches" is false, to correct the result) may be:',
+    '- {"kind":"set-presentation","nodeID":"p3","presentation":{"bold":true}}',
+    '- {"kind":"move","nodeID":"h1","targetIndex":2}',
+    '- {"kind":"rewrite-text","nodeID":"h1","text":"# 2.4 New heading"} (headings only; the full replacement line)',
+    'If the formatted text satisfies the user request, "matches" is true and "operations" is [].',
+    `User request: ${description.slice(0, 2000)}.`,
+    `Format: ${format}`,
+    '\nFormatted text:\n',
+    formattedText.slice(0, 12000),
+  ].join(' ');
+  try {
+    const raw = await geminiCall(prompt, apiKey, fetcher);
+    const parsed = JSON.parse(raw) as Partial<CustomVerification>;
+    return {
+      matches: parsed.matches === true,
+      reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 500) : '',
+      operations: Array.isArray(parsed.operations) ? parsed.operations : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+export const MAX_CUSTOM_REFINEMENTS = 2;
+
+export interface CustomFormattingOutcome {
+  plan: BrowserFormattingPlan;
+  formatted: BrowserResult;
+  expectedTextChanges?: Array<{ source: string; replacement: string }>;
+  verificationNote: string | null;
+  refinements: number;
+  clarificationAffectsContent: boolean;
+  warnings: string[];
+}
+
+async function formattedTextFor(formatted: BrowserResult): Promise<string> {
+  if (formatted.format === 'markdown') return await formatted.blob.text();
+  if (formatted.format === 'docx') return extractDocxText(await formatted.blob.arrayBuffer());
+  return '';
+}
+
+function expectedTextChangesFor(
+  plan: BrowserFormattingPlan,
+  source: BrowserSource,
+  docx: { nodes: Array<{ nodeID: string; text: string }> } | null
+): Array<{ source: string; replacement: string }> | undefined {
+  const rewrites = plan.operations.filter((op) => op.kind === 'rewrite-text') as Array<Extract<BrowserFormattingOperation, { kind: 'rewrite-text' }>>;
+  if (rewrites.length === 0) return undefined;
+  const changes: Array<{ source: string; replacement: string }> = [];
+  for (const op of rewrites) {
+    if (source.format === 'markdown') {
+      const line = source.text.split(/\r?\n/)[Number(op.nodeID.slice(1))];
+      if (line !== undefined) changes.push({ source: line.trim(), replacement: op.text });
+    } else if (source.format === 'docx' && docx) {
+      const node = docx.nodes.find((entry) => entry.nodeID === op.nodeID);
+      if (node) changes.push({ source: node.text.trim(), replacement: op.text });
+    }
+  }
+  return changes.length > 0 ? changes : undefined;
+}
+
+export interface CustomFormattingProgress {
+  progress: number;
+  message: string;
+}
+
+export async function runCustomFormatting(
+  source: BrowserSource,
+  instructions: string,
+  apiKey: string,
+  fetcher: typeof fetch = fetch,
+  onProgress?: (stage: CustomFormattingProgress) => void
+): Promise<CustomFormattingOutcome> {
+  const warnings: string[] = [];
+  const description = instructions.trim();
+  if (!description) throw new Error('Describe the custom style before formatting.');
+  if (!apiKey) throw new Error('Configure a Gemini API key before formatting.');
+
+  let refinements = 0;
+  let verificationNote: string | null = null;
+  let clarificationAffectsContent = false;
+
+  onProgress?.({ progress: 10, message: 'Analyzing the custom description…' });
+  const clarification = await clarifyCustomInstructions(description, source.format, apiKey, fetcher);
+  const workingDescription = clarification ? clarification.clarifiedDescription : description;
+  if (clarification) {
+    clarificationAffectsContent = clarification.affectsContent;
+    if (clarification.affectsContent && clarification.reason) warnings.push(`Note: ${clarification.reason}`);
+  }
+
+  const docx = await docxNodeLists(source);
+  onProgress?.({ progress: 20, message: 'Creating a formatting plan…' });
+  let plan = (await requestFormattingPlan(source, 'custom', workingDescription, apiKey, fetcher)).plan;
+  const blockCount = source.format === 'docx' ? docx?.blockCount ?? 0 : buildMarkdownBlocks(source.text).length;
+  const validNodeIDs = validNodeIDsFor(source, docx);
+  const headingNodeIDs = source.format === 'docx' && docx
+    ? new Set(docx.headingNodeIDs)
+    : new Set(source.text.split(/\r?\n/).map((line, index) => (/^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`)).filter((id) => id.startsWith('h')));
+
+  let formatted = await formatSource(source, plan);
+  while (source.format === 'markdown' || source.format === 'docx') {
+    onProgress?.({ progress: 65, message: 'Verifying the result matches your description…' });
+    const verification = await verifyCustomResult(workingDescription, await formattedTextFor(formatted), source.format, apiKey, fetcher);
+    if (!verification) {
+      verificationNote = 'AI verification was inconclusive; proceeding with the current result.';
+      break;
+    }
+    if (verification.matches) {
+      verificationNote = 'AI verified the result matches your description.';
+      break;
+    }
+    if (refinements >= MAX_CUSTOM_REFINEMENTS) {
+      verificationNote = 'The result could not fully match your description after refinements; reviewing the last result.';
+      break;
+    }
+    const corrective = screenAiPlan({ version: 1, operations: verification.operations, warnings: [] }, validNodeIDs, blockCount, headingNodeIDs);
+    if (corrective.plan.operations.length === 0) {
+      verificationNote = 'AI verification could not suggest corrective changes; proceeding with the current result.';
+      break;
+    }
+    plan = mergePlans(plan, corrective.plan);
+    warnings.push(...corrective.warnings);
+    refinements += 1;
+    onProgress?.({ progress: 70 + refinements * 5, message: `Refining to match your description (${refinements}/${MAX_CUSTOM_REFINEMENTS})…` });
+    formatted = await formatSource(source, plan);
+  }
+
+  const expectedTextChanges = expectedTextChangesFor(plan, source, docx);
+  const out: CustomFormattingOutcome = {
+    plan,
+    formatted,
+    expectedTextChanges,
+    verificationNote,
+    refinements,
+    clarificationAffectsContent,
+    warnings,
+  };
+  return out;
 }
 
 export async function formatSource(source: BrowserSource, plan: BrowserFormattingPlan): Promise<BrowserResult> {
@@ -173,10 +413,15 @@ export function applyMarkdownPlan(source: string, plan: BrowserFormattingPlan): 
   const presentationOps = new Map(
     plan.operations.filter((op) => op.kind === 'set-presentation').map((op) => [op.nodeID, (op as Extract<BrowserFormattingOperation, { kind: 'set-presentation' }>).presentation])
   );
+  const rewrites = new Map(
+    plan.operations.filter((op) => op.kind === 'rewrite-text').map((op) => [op.nodeID, (op as Extract<BrowserFormattingOperation, { kind: 'rewrite-text' }>).text])
+  );
 
   const styled = source.split(/\r?\n/).map((line, index) => {
     if (hasEmphasisMarkers(line)) return line;
     const nodeID = /^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`;
+    const rewrite = rewrites.get(nodeID);
+    if (rewrite) return rewrite;
     const presentation = presentationOps.get(nodeID);
     if (!presentation) return line;
     const listMarker = line.match(/^(\s*(?:[-*+]|\d+\.)\s+)/)?.[1] ?? '';
