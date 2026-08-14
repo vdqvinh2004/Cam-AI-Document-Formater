@@ -26,20 +26,26 @@ yarn test:e2e
 yarn build
 ```
 
+Latest validation (Wave 7 complete): `yarn typecheck` pass; `yarn lint` pass; `yarn test` —
+13 files, 102 tests; `yarn test:e2e` — 49 tests across shadcn-flow, browser-product, ui,
+docx-preview, and preview specs; `yarn build` — 221.46 kB bundle (70.07 kB gzip) plus vendor
+chunks.
+
 Focused regression checks must cover:
 
 1. Privacy footer navigation renders a privacy page, not a server 404.
 2. Unknown paths render the not-found page with a workspace link.
 3. TXT/Markdown result preview uses actual result text and compare no longer compares against an empty string.
 4. DOCX source/result previews are built from their actual package bytes; a result is never silently represented as plain text.
-5. DOCX formatting is reported as unavailable unless a real package transformation and validation pass exist.
+5. DOCX formatting applies run properties and moves from the plan and, when it succeeds, validation passes and export offers `*_cam_formatted.docx`; the result preview renders the transformed package.
 6. DOCX preview renders text only: images, drawings, headers/footers, and nested run properties are not shown; embedded OLE objects produce a `partial` preview with a warning.
 7. DOCX preview limits are 20 MB package / 8 MB document XML (browser output also capped at 250k characters); malformed packages fail closed to `unavailable`/`failed` with no preview.
-8. Content must survive formatting 100% exactly (order-sensitive token equality). Any word changed, added, removed, or reordered blocks export.
-9. Root cause of "formatting produced no visible change" (T191): the AI plan's `presentation` object was never mapped into DOCX run properties — `formatDocx` read `bold/italic` from the operation root while they lived under `presentation`, so the XML was rewritten without any style. Fixed by mapping plan operations into DOCX operations; the plan vocabulary now also carries `fontSize`, `fontFamily`, and `color`, which `formatDocx` writes as `w:sz`, `w:rFonts`, and `w:color`. Empty plans now surface an explicit "no style changes were applied" state.
-6. Compare separates preserved content from presentation changes and uses a truthful unavailable state when evidence is insufficient.
-7. UI controls remain keyboard-accessible and usable at narrow viewport sizes.
-8. Source and generated document contents are absent from browser storage after reload/close; only the documented API-key storage remains.
+8. Content must survive formatting 100% exactly (order-sensitive token equality). Any word changed, added, removed, or reordered blocks export; when structural `move` ops were applied, the content check is order-insensitive-but-complete (multiset) and reordering alone reports `presentation-changed`, never `content-changed`.
+9. Named styles (simple, modern, professional, easy-to-read, academic) format locally without an API key or disclosure; every style produces a different, valid result (Markdown + DOCX), and list markers survive emphasis-wrapped formatting unchanged.
+10. Custom style stays disabled until a stored API key, the disclosure confirmation, and a non-empty description exist; a mocked Gemini plan with a `move` op reorders sections and the comparison reports `Section order` while content stays complete.
+11. Compare separates preserved content from presentation changes, reports `noChangesApplied` from the applied-op count, and uses a truthful unavailable state when evidence is insufficient.
+12. UI controls remain keyboard-accessible and usable at narrow viewport sizes; deep links `/setup` and `/review` redirect to the dashboard with the right panel.
+13. Source and generated document contents are absent from browser storage after reload/close; only the documented API-key storage remains.
 
 ## Manual DOCX scenario
 

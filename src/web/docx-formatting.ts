@@ -1,30 +1,17 @@
 import JSZip from 'jszip';
+import type { BrowserFormattingOperation, BrowserPresentation } from './formatting/style-plan';
 
-export interface DocxFormattingOperation {
-  nodeID: string;
-  bold?: boolean;
-  italic?: boolean;
-  fontSize?: number;
-  fontFamily?: string;
-  color?: string;
-}
-
-export interface DocxFormattingPlan {
-  version: number;
-  operations: DocxFormattingOperation[];
-  warnings?: string[];
+export interface DocxInspection {
+  paragraphNodeIDs: string[];
+  headingNodeIDs: string[];
+  blockCount: number;
 }
 
 const MAX_PACKAGE_BYTES = 20 * 1024 * 1024;
 const MAX_XML_BYTES = 8 * 1024 * 1024;
 
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+function toUint8Array(source: ArrayBuffer | Uint8Array): Uint8Array {
+  return source instanceof Uint8Array ? source : new Uint8Array(source);
 }
 
 function parseXml(xml: string): Document {
@@ -37,12 +24,45 @@ function serializeXml(doc: Document): string {
   return serializer.serializeToString(doc);
 }
 
-function applyPresentation(rPr: Element, operation: DocxFormattingOperation): void {
+function isHeadingParagraph(paragraph: Element): boolean {
+  return paragraph.getElementsByTagName('w:pStyle')[0]?.getAttribute('w:val')?.match(/Heading([1-6])/) !== null;
+}
+
+/** Mirrors the nodeID counter scheme used by the plan appliers. */
+export async function inspectDocx(source: ArrayBuffer): Promise<DocxInspection> {
+  const zip = await JSZip.loadAsync(toUint8Array(source));
+  const documentFile = zip.file('word/document.xml');
+  if (!documentFile) throw new Error('The DOCX package has no readable document part.');
+  const xml = await documentFile.async('string');
+  const doc = parseXml(xml);
+  const paragraphs = doc.getElementsByTagName('w:p');
+  const paragraphNodeIDs: string[] = [];
+  const headingNodeIDs: string[] = [];
+  let paragraphIndex = 0;
+  let headingIndex = 0;
+
+  for (let i = 0; i < paragraphs.length; i++) {
+    if (isHeadingParagraph(paragraphs[i])) {
+      headingNodeIDs.push(`h${headingIndex++}`);
+    } else {
+      paragraphNodeIDs.push(`p${paragraphIndex++}`);
+    }
+  }
+
+  const body = doc.getElementsByTagName('w:body')[0];
+  const blockCount = body ? Array.from(body.children).filter((child) => child.localName === 'p').length : 0;
+
+  return { paragraphNodeIDs, headingNodeIDs, blockCount };
+}
+
+function applyPresentation(rPr: Element, operation: BrowserFormattingOperation): void {
+  if (operation.kind !== 'set-presentation') return;
+  const presentation = operation.presentation;
   const doc = rPr.ownerDocument!;
 
-  if (operation.bold !== undefined) {
+  if (presentation.bold !== undefined) {
     let b = rPr.getElementsByTagName('w:b')[0] as Element | undefined;
-    if (operation.bold) {
+    if (presentation.bold) {
       if (!b) {
         b = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:b');
         rPr.appendChild(b);
@@ -52,9 +72,9 @@ function applyPresentation(rPr: Element, operation: DocxFormattingOperation): vo
     }
   }
 
-  if (operation.italic !== undefined) {
+  if (presentation.italic !== undefined) {
     let i = rPr.getElementsByTagName('w:i')[0] as Element | undefined;
-    if (operation.italic) {
+    if (presentation.italic) {
       if (!i) {
         i = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:i');
         rPr.appendChild(i);
@@ -64,93 +84,101 @@ function applyPresentation(rPr: Element, operation: DocxFormattingOperation): vo
     }
   }
 
-  if (operation.fontSize !== undefined) {
+  if (presentation.fontSize !== undefined) {
     let sz = rPr.getElementsByTagName('w:sz')[0] as Element | undefined;
     if (!sz) {
       sz = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:sz');
       rPr.appendChild(sz);
     }
-    sz.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', String(Math.round(operation.fontSize * 2)));
+    sz.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', String(Math.round(presentation.fontSize * 2)));
   }
 
-  if (operation.fontFamily) {
+  if (presentation.fontFamily) {
     let fonts = rPr.getElementsByTagName('w:rFonts')[0] as Element | undefined;
     if (!fonts) {
       fonts = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rFonts');
       rPr.appendChild(fonts);
     }
-    fonts.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:ascii', operation.fontFamily);
-    fonts.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:hAnsi', operation.fontFamily);
+    fonts.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:ascii', presentation.fontFamily);
+    fonts.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:hAnsi', presentation.fontFamily);
   }
 
-  if (operation.color) {
+  if (presentation.color) {
     let color = rPr.getElementsByTagName('w:color')[0] as Element | undefined;
     if (!color) {
       color = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:color');
       rPr.appendChild(color);
     }
-    color.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', operation.color.replace(/^#/, ''));
+    color.setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', presentation.color.replace(/^#/, ''));
   }
 }
 
-function applyFormattingToParagraph(paragraph: Element, operations: Map<string, DocxFormattingOperation>, nodeIndex: number): void {
-  const nodeID = `p${nodeIndex}`;
-  const operation = operations.get(nodeID);
-  if (!operation) return;
-
+function applyPresentationToParagraph(paragraph: Element, presentation: BrowserPresentation): void {
   const runs = paragraph.getElementsByTagName('w:r');
   for (let i = 0; i < runs.length; i++) {
     const run = runs[i];
     let rPr = run.getElementsByTagName('w:rPr')[0] as Element | undefined;
-    
     if (!rPr) {
       rPr = paragraph.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rPr');
       run.insertBefore(rPr, run.firstChild);
     }
-
-    applyPresentation(rPr, operation);
+    applyPresentation(rPr, { kind: 'set-presentation', nodeID: '', presentation });
   }
 }
 
-function applyFormattingToHeading(paragraph: Element, operations: Map<string, DocxFormattingOperation>, nodeIndex: number): void {
-  const nodeID = `h${nodeIndex}`;
-  const operation = operations.get(nodeID);
-  if (!operation) return;
+function reorderBodyParagraphs(doc: Document, moves: Array<{ nodeID: string; targetIndex: number }>): void {
+  if (moves.length === 0) return;
+  const body = doc.getElementsByTagName('w:body')[0];
+  if (!body) return;
 
-  const runs = paragraph.getElementsByTagName('w:r');
-  for (let i = 0; i < runs.length; i++) {
-    const run = runs[i];
-    let rPr = run.getElementsByTagName('w:rPr')[0] as Element | undefined;
-    
-    if (!rPr) {
-      rPr = paragraph.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rPr');
-      run.insertBefore(rPr, run.firstChild);
-    }
+  const allChildren = Array.from(body.children);
+  const movable = allChildren.filter((child) => child.localName === 'p');
 
-    applyPresentation(rPr, operation);
+  const nodeIDs = new Map<Element, string>();
+  let paragraphIndex = 0;
+  let headingIndex = 0;
+  for (const child of allChildren) {
+    if (child.localName !== 'p') continue;
+    nodeIDs.set(child, isHeadingParagraph(child) ? `h${headingIndex++}` : `p${paragraphIndex++}`);
   }
+
+  let ordered = [...movable];
+  for (const move of moves) {
+    const fromIndex = ordered.findIndex((el) => nodeIDs.get(el) === move.nodeID);
+    if (fromIndex === -1) continue;
+    const [block] = ordered.splice(fromIndex, 1);
+    const target = Math.max(0, Math.min(move.targetIndex, ordered.length));
+    ordered.splice(target, 0, block);
+  }
+
+  const order = new Map<Element, Element>();
+  for (const el of movable) {
+    order.set(el, ordered[0] ?? el);
+    const pos = ordered.indexOf(el);
+    if (pos !== -1) ordered.splice(pos, 1);
+  }
+
+  body.replaceChildren(...allChildren.map((child) => (child.localName === 'p' ? order.get(child)! : child)));
 }
 
-export async function formatDocx(source: ArrayBuffer, plan: DocxFormattingPlan): Promise<Blob> {
+export async function formatDocx(source: ArrayBuffer, plan: { version: number; operations: BrowserFormattingOperation[] }): Promise<Blob> {
   if (source.byteLength === 0 || source.byteLength > MAX_PACKAGE_BYTES) {
     throw new Error('DOCX is empty or exceeds the size limit.');
   }
 
   try {
-    const zip = await JSZip.loadAsync(source);
+    const zip = await JSZip.loadAsync(toUint8Array(source));
     const documentFile = zip.file('word/document.xml');
-    
-    if (!documentFile) {
-      throw new Error('The DOCX package has no readable document part.');
-    }
+    if (!documentFile) throw new Error('The DOCX package has no readable document part.');
 
     const xml = await documentFile.async('string');
-    if (xml.length > MAX_XML_BYTES) {
-      throw new Error('The DOCX document part exceeds the size limit.');
-    }
+    if (xml.length > MAX_XML_BYTES) throw new Error('The DOCX document part exceeds the size limit.');
 
     const doc = parseXml(xml);
-    const operations = new Map(plan.operations.map(op => [op.nodeID, op]));
+    const presentationOps = new Map(
+      plan.operations.filter((op) => op.kind === 'set-presentation').map((op) => [op.nodeID, op as Extract<BrowserFormattingOperation, { kind: 'set-presentation' }>])
+    );
+    const moves = plan.operations.filter((op) => op.kind === 'move').map((op) => ({ nodeID: op.nodeID, targetIndex: (op as Extract<BrowserFormattingOperation, { kind: 'move' }>).targetIndex }));
 
     const paragraphs = doc.getElementsByTagName('w:p');
     let paragraphIndex = 0;
@@ -158,23 +186,18 @@ export async function formatDocx(source: ArrayBuffer, plan: DocxFormattingPlan):
 
     for (let i = 0; i < paragraphs.length; i++) {
       const paragraph = paragraphs[i];
-      const pStyle = paragraph.getElementsByTagName('w:pStyle')[0];
-      const headingLevel = pStyle?.getAttribute('w:val')?.match(/Heading([1-6])/)?.[1];
-      
-      if (headingLevel) {
-        applyFormattingToHeading(paragraph, operations, headingIndex);
-        headingIndex++;
-      } else {
-        applyFormattingToParagraph(paragraph, operations, paragraphIndex);
-        paragraphIndex++;
-      }
+      const nodeID = isHeadingParagraph(paragraph) ? `h${headingIndex++}` : `p${paragraphIndex++}`;
+      const op = presentationOps.get(nodeID);
+      if (!op) continue;
+      applyPresentationToParagraph(paragraph, op.presentation);
     }
+
+    reorderBodyParagraphs(doc, moves);
 
     const updatedXml = serializeXml(doc);
     zip.file('word/document.xml', updatedXml);
 
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-    return blob;
+    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   } catch (error) {
     throw new Error(`DOCX formatting failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
@@ -186,17 +209,12 @@ export async function extractDocxText(source: ArrayBuffer): Promise<string> {
   }
 
   try {
-    const zip = await JSZip.loadAsync(source);
+    const zip = await JSZip.loadAsync(toUint8Array(source));
     const documentFile = zip.file('word/document.xml');
-    
-    if (!documentFile) {
-      return '';
-    }
+    if (!documentFile) return '';
 
     const xml = await documentFile.async('string');
-    if (xml.length > MAX_XML_BYTES) {
-      return '';
-    }
+    if (xml.length > MAX_XML_BYTES) return '';
 
     const doc = parseXml(xml);
     const paragraphs = doc.getElementsByTagName('w:p');
@@ -206,11 +224,9 @@ export async function extractDocxText(source: ArrayBuffer): Promise<string> {
       const paragraph = paragraphs[i];
       const textNodes = paragraph.getElementsByTagName('w:t');
       let paragraphText = '';
-      
       for (let j = 0; j < textNodes.length; j++) {
         paragraphText += textNodes[j].textContent || '';
       }
-      
       if (paragraphText.trim()) {
         texts.push(paragraphText.trim());
       }

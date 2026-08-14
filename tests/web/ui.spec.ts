@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { openApp, uploadFile } from './helpers';
 
 test.describe('UI accessibility — keyboard navigation', () => {
   test('Tab order traverses navigation and file dropzone', async ({ page }) => {
-    await page.goto('/');
+    await openApp(page);
     await page.keyboard.press('Tab');
     // First nav link (Workspace)
     await expect(page.getByRole('menuitem', { name: 'Workspace' })).toBeFocused();
@@ -12,14 +13,16 @@ test.describe('UI accessibility — keyboard navigation', () => {
     await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeFocused();
   });
 
-  test('Setup disclosure checkbox is keyboard reachable and can be checked', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+  test('Custom disclosure checkbox is keyboard reachable and can be checked', async ({ page }) => {
+    await uploadFile(page, {
+  name: 'notes.md',
+  mimeType: 'text/markdown',
+  buffer: Buffer.from('# Title\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
+
+    await page.getByRole('button', { name: /modern/i }).click();
+    await page.getByRole('menuitem', { name: 'Custom' }).click();
 
     for (let i = 0; i < 12; i++) {
       await page.keyboard.press('Tab');
@@ -35,8 +38,8 @@ test.describe('UI accessibility — keyboard navigation', () => {
 
 test.describe('Responsive layout', () => {
   test('upload step stacks vertically at narrow viewport', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 320, height: 568 });
-    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
     await expect(page.getByLabel('File drop zone')).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
@@ -44,12 +47,12 @@ test.describe('Responsive layout', () => {
   });
 
   test('configure step stacks vertically at narrow viewport', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 320, height: 568 });
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
@@ -59,31 +62,23 @@ test.describe('Responsive layout', () => {
 
 test.describe('Workflow state messaging', () => {
   test('displays Ready after file load, then completes formatting', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
-    await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }) })
-    );
-
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+      await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('status')).toContainText('File loaded. Configure formatting options.');
 
-    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Start Formatting' }).click();
     await expect(page.getByRole('status')).toContainText('Complete');
     await expect(page.getByRole('button', { name: 'Download Formatted File' })).toBeVisible();
   });
 
   test('shows error state when file type is not supported', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.pages',
-      mimeType: 'application/octet-stream',
-      buffer: Buffer.from('not supported'),
+    await uploadFile(page, {
+  name: 'notes.pages',
+  mimeType: 'application/octet-stream',
+  buffer: Buffer.from('not supported'),
     });
     await expect(page.getByRole('status')).toContainText('not supported');
   });

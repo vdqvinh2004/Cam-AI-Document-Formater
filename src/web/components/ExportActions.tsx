@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import type { BrowserResult } from '../state/workflow-context';
 import { Button } from '@/components/ui/button';
+import { downloadBlob } from '../lib/download';
+import { withFormattedSuffix } from '../lib/filename';
 
 interface ExportActionsProps {
   result: BrowserResult;
@@ -10,12 +12,7 @@ interface ExportActionsProps {
 export const ExportActions = memo(function ExportActions({ result, onExportComplete }: ExportActionsProps) {
   const canExport = result.validationStatus === 'pass' && result.formattingAvailable;
   const download = () => {
-    const url = URL.createObjectURL(result.blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = result.filename ?? result.name;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(result.blob, withFormattedSuffix(result.filename ?? result.name));
     onExportComplete?.();
   };
 
@@ -24,6 +21,9 @@ export const ExportActions = memo(function ExportActions({ result, onExportCompl
       <Button onClick={download} disabled={!canExport}>
         Download Formatted File
       </Button>
+      <p className="text-sm text-muted-foreground">
+        Saves as {withFormattedSuffix(result.filename ?? result.name)}
+      </p>
       {!canExport && <p className="text-sm text-muted-foreground">Export is unavailable until a validated formatting transformation exists.</p>}
     </div>
   );

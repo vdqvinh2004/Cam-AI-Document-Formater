@@ -1,57 +1,68 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BrowserFormatAdapter, createFormatAdapter } from '../../../src/web/api/format-adapter';
+import { detectFormat } from '../../../src/web/formatting';
+import { formatDocx, extractDocxText, inspectDocx } from '../../../src/web/docx-formatting';
+import type { BrowserFormattingPlan } from '../../../src/web/formatting/style-plan';
 
-function bytesOf(text: string): ArrayBuffer {
-  return new TextEncoder().encode(text).buffer;
-}
+const FIXTURES = join(__dirname, '..', '..', 'fixtures', 'docx');
+const fixture = (name: string): ArrayBuffer => {
+  const buffer = readFileSync(join(FIXTURES, name));
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+};
 
-function textOf(buffer: ArrayBuffer): string {
-  return new TextDecoder('utf-8').decode(buffer);
-}
+const richFixture = () => fixture('sample-rich.docx');
 
 describe('DOCX result semantics', () => {
-  it('never claims formatting is available for DOCX', async () => {
-    const source = bytesOf('not a real docx');
-    const result = await createFormatAdapter('docx').format(source, { style: 'modern' });
-    expect(result.formattingAvailable).toBe(false);
-    expect(result.warnings.some((warning) => warning.includes('DOCX'))).toBe(true);
-    expect(new Uint8Array(await result.blob.arrayBuffer())).toEqual(new Uint8Array(source));
-  });
-
-  it('never claims formatting is available for PDF', async () => {
-    const source = bytesOf('%PDF-1.7 source');
-    const result = await createFormatAdapter('pdf').format(source, { style: 'modern' });
-    expect(result.formattingAvailable).toBe(false);
-    expect(result.warnings.some((warning) => warning.includes('PDF'))).toBe(true);
-  });
-
-  it('returns the original DOCX bytes untouched when formatting is unavailable', async () => {
-    const source = bytesOf('original bytes must round-trip');
-    const result = await createFormatAdapter('docx').format(source, { style: 'academic', instructions: 'rewrite this' });
-    const output = new Uint8Array(await result.blob.arrayBuffer());
-    expect(output).toEqual(new Uint8Array(source));
-    expect(textOf(await result.blob.arrayBuffer())).toBe('original bytes must round-trip');
-  });
-
-  it('offers formatting for TXT and Markdown', async () => {
-    const txt = await createFormatAdapter('txt').format(bytesOf('Body text'), { style: 'modern' });
-    expect(txt.formattingAvailable).toBe(true);
-    expect(txt.warnings).toEqual([]);
-    const md = await createFormatAdapter('markdown').format(bytesOf('# Heading'), { style: 'modern' });
-    expect(md.formattingAvailable).toBe(true);
-  });
-
   it('detects formats from filenames', () => {
-    const adapter = createFormatAdapter('txt');
-    expect(adapter.detect(bytesOf(''), 'notes.txt').format).toBe('txt');
-    expect(adapter.detect(bytesOf(''), 'notes.md').format).toBe('markdown');
-    expect(adapter.detect(bytesOf(''), 'notes.docx').format).toBe('docx');
-    expect(adapter.detect(bytesOf(''), 'notes.pdf').format).toBe('pdf');
+    expect(detectFormat('notes.txt')).toBe('txt');
+    expect(detectFormat('notes.md')).toBe('markdown');
+    expect(detectFormat('notes.markdown')).toBe('markdown');
+    expect(detectFormat('notes.docx')).toBe('docx');
+    expect(detectFormat('notes.pdf')).toBe('pdf');
+    expect(detectFormat('notes.pages')).toBeNull();
   });
 
-  it('passes validation only when content survives round-trip', async () => {
-    const adapter = new BrowserFormatAdapter('txt');
-    expect((await adapter.validateRoundTrip('One Two', 'One Two')).status).toBe('pass');
-    expect((await adapter.validateRoundTrip('One Two', 'One Two Three Four')).status).toBe('fail');
+  it('applies presentation operations and preserves all text', async () => {
+    const source = richFixture();
+    const plan: BrowserFormattingPlan = {
+      version: 1,
+      operations: [
+        { kind: 'set-presentation', nodeID: 'h0', presentation: { bold: true, fontFamily: 'Georgia' } },
+        { kind: 'set-presentation', nodeID: 'p0', presentation: { fontSize: 13, fontFamily: 'Helvetica' } },
+      ],
+    };
+    const output = await formatDocx(source, plan);
+    expect(new Uint8Array(await output.arrayBuffer())).not.toEqual(new Uint8Array(source));
+    expect(await extractDocxText(await output.arrayBuffer())).toBe(await extractDocxText(source));
+  });
+
+  it('reorders top-level body paragraphs with move operations while preserving content', async () => {
+    const source = richFixture();
+    const inspection = await inspectDocx(source);
+    expect(inspection.blockCount).toBeGreaterThan(1);
+    const [first, second] = [inspection.paragraphNodeIDs[0], inspection.paragraphNodeIDs[1] ?? inspection.headingNodeIDs[0]];
+    const plan: BrowserFormattingPlan = {
+      version: 1,
+      operations: [
+        { kind: 'set-presentation', nodeID: first, presentation: { bold: true } },
+        { kind: 'move', nodeID: first, targetIndex: inspection.blockCount - 1 },
+      ],
+    };
+    const output = await formatDocx(source, plan);
+    expect(await extractDocxText(await output.arrayBuffer())).toBe(await extractDocxText(source));
+  });
+
+  it('fails closed and preserves the source bytes for a malformed package', async () => {
+    const { formatSource, readSource } = await import('../../../src/web/formatting');
+    const file = new File(['not a zip'], 'broken.docx');
+    const source = await readSource(file, new TextEncoder().encode('not a zip').buffer);
+    const result = await formatSource(source, { version: 1, operations: [] });
+    expect(result.previewAvailable).toBe(false);
+    expect(result.warnings.some((warning) => warning.includes('DOCX'))).toBe(true);
+  });
+
+  it('throws for empty sources', async () => {
+    await expect(formatDocx(new ArrayBuffer(0), { version: 1, operations: [] })).rejects.toThrow('empty');
   });
 });

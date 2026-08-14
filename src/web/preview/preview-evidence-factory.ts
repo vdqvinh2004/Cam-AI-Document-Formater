@@ -16,11 +16,11 @@ export async function createSourcePreview(
   switch (format) {
     case 'docx': {
       const result = await renderDocxPreview(arrayBuffer);
+      status = result.status;
       html = result.html;
       text = result.text;
       featureCount = result.featureCount;
       warnings.push(...result.warnings);
-      if (result.warnings.length > 0) status = 'partial';
       break;
     }
     case 'txt':
@@ -54,7 +54,7 @@ export async function createResultPreview(
   formattingAvailable: boolean
 ): Promise<PreviewEvidence> {
   const arrayBuffer = await blob.arrayBuffer();
-  
+
   if (!formattingAvailable && (format === 'docx' || format === 'pdf')) {
     return {
       status: 'unavailable',

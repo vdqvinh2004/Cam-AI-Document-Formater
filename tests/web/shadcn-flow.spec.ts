@@ -1,20 +1,16 @@
 import { expect, test } from '@playwright/test';
+import { openApp, uploadFile } from './helpers';
 
 test.describe('Progressive dashboard flow', () => {
   test('upload → configure → format → review works end-to-end', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
-
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+      await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
 
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
     await expect(page.getByText('notes.txt')).toBeVisible();
-
-    await page.getByRole('checkbox').check();
 
     await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
       route.fulfill({
@@ -29,14 +25,27 @@ test.describe('Progressive dashboard flow', () => {
 
     await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Download Formatted File' })).toBeVisible();
+    await expect(page.getByText('Saves as notes_cam_formatted.txt')).toBeVisible();
+  });
+
+  test('named styles format locally without an API key or disclosure', async ({ page }) => {
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
+    });
+    const start = page.getByRole('button', { name: 'Start Formatting' });
+    await expect(start).toBeEnabled();
+    await start.click();
+    await expect(page.getByRole('status')).toContainText('Complete');
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
   });
 
   test('panel state persists during flow', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
 
@@ -47,7 +56,7 @@ test.describe('Progressive dashboard flow', () => {
 
 test.describe('Phase 13 step gating and interactive states', () => {
   test('later steps stay disabled until their prerequisite completes', async ({ page }) => {
-    await page.goto('/');
+    await openApp(page);
     await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
 
     const uploadStep = page.getByRole('button', { name: 'Upload', exact: true });
@@ -57,10 +66,10 @@ test.describe('Phase 13 step gating and interactive states', () => {
     await expect(configureStep).toBeDisabled();
     await expect(reviewStep).toBeDisabled();
 
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
     await expect(configureStep).toBeEnabled();
@@ -79,39 +88,82 @@ test.describe('Phase 13 step gating and interactive states', () => {
     await expect(reviewStep).toBeEnabled();
   });
 
-  test('start formatting stays disabled until an API key is stored', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+  test('custom style stays disabled until API key, then disclosure, then description', async ({ page }) => {
+    await uploadFile(page, {
+  name: 'notes.md',
+  mimeType: 'text/markdown',
+  buffer: Buffer.from('# Title\nBody'),
     });
+
+    await page.getByRole('button', { name: /modern/i }).click();
+    await page.getByRole('menuitem', { name: 'Custom' }).click();
+
     const start = page.getByRole('button', { name: 'Start Formatting' });
     await expect(start).toBeDisabled();
     await expect(start).toHaveAttribute('title', /API key in Settings/);
+    await expect(page.getByRole('alert')).toContainText('Describe the custom style');
   });
 
-  test('start formatting becomes enabled once an API key is stored', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+  test('custom style unlocks after disclosure and description with a stored key', async ({ page }) => {
+    await openApp(page);
+    await page.addInitScript(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+    await uploadFile(page, {
+  name: 'notes.md',
+  mimeType: 'text/markdown',
+  buffer: Buffer.from('# Title\nBody'),
     });
+    await page.getByRole('button', { name: /modern/i }).click();
+    await page.getByRole('menuitem', { name: 'Custom' }).click();
+
     const start = page.getByRole('button', { name: 'Start Formatting' });
     await expect(start).toBeDisabled();
+    await expect(start).toHaveAttribute('title', /network disclosure/);
+
     await page.getByRole('checkbox').check();
+    await expect(start).toBeDisabled();
+    await expect(start).toHaveAttribute('title', /Describe the custom style/);
+
+    await page.getByPlaceholder(/Move the introduction after/).fill('Make the title bold');
     await expect(start).toBeEnabled();
   });
 
+  test('custom style formats with a mocked Gemini plan including a move', async ({ page }) => {
+    await openApp(page);
+    await page.addInitScript(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
+    await uploadFile(page, {
+  name: 'notes.md',
+  mimeType: 'text/markdown',
+  buffer: Buffer.from('# Title\nFirst section.\n\nSecond section.'),
+    });
+    await page.getByRole('button', { name: /modern/i }).click();
+    await page.getByRole('menuitem', { name: 'Custom' }).click();
+    await page.getByRole('checkbox').check();
+    await page.getByPlaceholder(/Move the introduction after/).fill('Move the title section to the end');
+
+    await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+          version: 1,
+          operations: [{ kind: 'move', nodeID: 'h0', targetIndex: 1 }],
+        }) }] } }] }),
+      })
+    );
+
+    await page.getByRole('button', { name: 'Start Formatting' }).click();
+    await expect(page.getByRole('status')).toContainText('Complete');
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
+    await expect(page.locator('.comparison-summary')).toContainText('Section order');
+  });
+
   test('hover and keyboard focus reach interactive controls', async ({ page }) => {
-    await page.goto('/');
+    await openApp(page);
     await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     const back = page.getByRole('button', { name: 'Back' });
     await page.getByRole('checkbox').check();
@@ -124,52 +176,55 @@ test.describe('Phase 13 step gating and interactive states', () => {
     await expect(page.getByRole('button', { name: 'Start Formatting' })).toBeFocused();
   });
 
-  test('surfaces an explicit no-changes state when formatting changes nothing', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => localStorage.setItem('camdoc.gemini-api-key', 'test-key'));
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+  test('surfaces an explicit no-changes state for formats that cannot store presentation', async ({ page }) => {
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
-    await page.getByRole('checkbox').check();
-    await page.route('https://generativelanguage.googleapis.com/**', async (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"version":1,"operations":[]}' }] } }] }),
-      })
-    );
     await page.getByRole('button', { name: 'Start Formatting' }).click();
     await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
     await expect(page.getByRole('status')).toContainText('identical to the source');
     await expect(page.locator('.comparison-summary')).toContainText('No style changes were applied');
   });
+
+  test('applies a named style to Markdown without calling Gemini', async ({ page }) => {
+    await uploadFile(page, {
+  name: 'notes.md',
+  mimeType: 'text/markdown',
+  buffer: Buffer.from('# Title\nBody text here.'),
+    });
+    await page.getByRole('button', { name: 'Start Formatting' }).click();
+    await expect(page.getByRole('status')).toContainText('Complete');
+    await expect(page.getByRole('heading', { name: 'Review results' })).toBeVisible();
+    await expect(page.locator('.comparison-summary')).toContainText('Formatting changes applied');
+    await expect(page.locator('.comparison-summary')).not.toContainText('No style changes were applied');
+  });
 });
 
 test.describe('Deep-link compatibility', () => {
   test('/setup deep-link redirects to dashboard with configure panel', async ({ page }) => {
-    await page.goto('/setup');
+    await openApp(page, '/setup');
     await expect(page).toHaveURL(/\/\?panel=configure/);
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
   });
 
   test('/review deep-link redirects to dashboard with review panel', async ({ page }) => {
-    await page.goto('/review');
+    await openApp(page, '/review');
     await expect(page).toHaveURL(/\/\?panel=review/);
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
   });
 
   test('settings and privacy pages still render', async ({ page }) => {
-    await page.goto('/settings');
+    await openApp(page, '/settings');
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
-    await page.goto('/privacy');
+    await openApp(page, '/privacy');
     await expect(page.getByRole('heading', { name: 'Privacy' })).toBeVisible();
   });
 
   test('unknown routes render NotFoundPage', async ({ page }) => {
-    await page.goto('/definitely-not-a-page');
+    await openApp(page, '/definitely-not-a-page');
     await expect(page.getByRole('heading', { name: 'Page Not Found' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Go to Workspace' })).toBeVisible();
   });
@@ -177,8 +232,8 @@ test.describe('Deep-link compatibility', () => {
 
 test.describe('Responsive layout', () => {
   test('mobile (375px) stacks panels vertically', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
     await expect(page.getByLabel('File drop zone')).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
@@ -186,24 +241,24 @@ test.describe('Responsive layout', () => {
   });
 
   test('tablet (768px) stacks panels vertically', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 768, height: 1024 });
-    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
     expect(bodyScroll).toBeLessThanOrEqual(768);
   });
 
   test('desktop (1024px) shows side-by-side layout', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 1024, height: 768 });
-    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
     expect(bodyScroll).toBeLessThanOrEqual(1024);
   });
 
   test('upload step stacks at narrow viewport', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 320, height: 568 });
-    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Document Formatter' })).toBeVisible();
     await expect(page.getByLabel('File drop zone')).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
@@ -211,12 +266,12 @@ test.describe('Responsive layout', () => {
   });
 
   test('configure step stacks at narrow viewport', async ({ page }) => {
+    await openApp(page);
     await page.setViewportSize({ width: 320, height: 568 });
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
     const bodyScroll = await page.evaluate(() => document.body.scrollWidth);
@@ -226,7 +281,7 @@ test.describe('Responsive layout', () => {
 
 test.describe('Keyboard navigation + focus management', () => {
   test('Tab order traverses navigation and file dropzone', async ({ page }) => {
-    await page.goto('/');
+    await openApp(page);
     await page.keyboard.press('Tab');
     await expect(page.getByRole('menuitem', { name: 'Workspace' })).toBeFocused();
 
@@ -235,11 +290,10 @@ test.describe('Keyboard navigation + focus management', () => {
   });
 
   test('Setup disclosure checkbox is keyboard reachable and can be checked', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
 
@@ -255,7 +309,7 @@ test.describe('Keyboard navigation + focus management', () => {
   });
 
   test('Dialog focus trap (Settings page)', async ({ page }) => {
-    await page.goto('/settings');
+    await openApp(page, '/settings');
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
     await page.keyboard.press('Tab');
@@ -264,11 +318,10 @@ test.describe('Keyboard navigation + focus management', () => {
   });
 
   test('DropdownMenu keyboard navigation (Style profile)', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'notes.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Heading\nBody'),
+    await uploadFile(page, {
+  name: 'notes.txt',
+  mimeType: 'text/plain',
+  buffer: Buffer.from('Heading\nBody'),
     });
     await expect(page.getByRole('heading', { name: 'Configure formatting' })).toBeVisible();
 
@@ -284,7 +337,7 @@ test.describe('Keyboard navigation + focus management', () => {
   });
 
   test('Toast appears and can be dismissed', async ({ page }) => {
-    await page.goto('/settings');
+    await openApp(page, '/settings');
     await page.getByPlaceholder('Paste your Gemini API key').fill('test-key');
     await page.getByRole('button', { name: 'Save Key' }).click();
     await expect(page.getByText('API key saved to this browser origin.')).toBeVisible();

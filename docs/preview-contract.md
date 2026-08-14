@@ -25,7 +25,9 @@ Nested formatting (bold/italic/color) is flattened to plain text in previews.
 - Images, drawings, and headers/footers are not rendered or extracted.
 - Nested run properties, themes, and styles are flattened to text.
 - The browser renderer reads the package with JSZip; the native renderer shells out to
-  `/usr/bin/unzip -p`. Neither writes back into the source archive.
+  `/usr/bin/unzip -p`. The source archive is never modified. After formatting, the browser
+  builds a new formatted package in memory (`formatDocx`) and the result preview renders that
+  package under the same contract.
 
 ## Sanitization and resource limits
 
@@ -47,11 +49,13 @@ real package transformation. A preview status of `rendered` never implies export
 
 After the formatting plan is applied, the formatted output is re-extracted and compared against
 the source with order-sensitive token equality. 100% of the content must survive — a single
-word added, removed, reordered, or rewritten blocks export and preserves the original file.
+word added, removed, or rewritten blocks export and preserves the original file.
 Whitespace, Markdown emphasis markers, and DOCX run properties (`bold`, `italic`, `fontSize`,
-`fontFamily`, `color`) are presentation and never affect the content verdict. The same exact
-check runs on macOS (`NativeValidationComparator`) and in the browser
-(`src/web/comparison/comparison-engine.ts`).
+`fontFamily`, `color`) are presentation and never affect the content verdict. When structural
+`move` ops were applied (Custom style), the check is order-insensitive-but-complete: every
+token must survive; block reordering alone is presentation (`presentation-changed`, not
+`content-changed`). The same exact check runs on macOS (`NativeValidationComparator`) and in
+the browser (`src/web/comparison/comparison-engine.ts`).
 
 ## No-op detection
 

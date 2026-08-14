@@ -1,6 +1,7 @@
 import type { BrowserSource, BrowserResult } from '../state/workflow-context';
 import { useWorkflow } from '../state/workflow-context';
 import { Badge } from '@/components/ui/badge';
+import { withFormattedSuffix } from '../lib/filename';
 
 export function ComparisonSummary({ source, result }: { source: BrowserSource; result: BrowserResult }) {
   const { state } = useWorkflow();
@@ -8,6 +9,7 @@ export function ComparisonSummary({ source, result }: { source: BrowserSource; r
   const formattingAvailable = result.formattingAvailable;
   const validation = result.validationStatus;
   const comparison = state.comparison;
+  const outputName = withFormattedSuffix(result.filename ?? result.name);
 
   return (
     <div className="comparison-summary space-y-4 rounded-lg border p-4">
@@ -21,7 +23,7 @@ export function ComparisonSummary({ source, result }: { source: BrowserSource; r
       </div>
       <div className="review-meta space-y-1 text-sm text-muted-foreground">
         <p><strong className="text-foreground">Source:</strong> {source.name} ({source.format.toUpperCase()})</p>
-        <p><strong className="text-foreground">Output:</strong> {result.name} ({result.format.toUpperCase()})</p>
+        <p><strong className="text-foreground">Output:</strong> {outputName} ({result.format.toUpperCase()})</p>
         {!sameFormat && <p className="text-warning">The output format differs from the source format.</p>}
         {!formattingAvailable && <p className="text-warning">The original document was preserved unchanged. No formatting transformation was performed.</p>}
         {comparison?.noChangesApplied && <p className="text-warning">No style changes were applied — the result is identical to the source. Try another style or adjust your instructions.</p>}

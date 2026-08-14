@@ -5,57 +5,51 @@ export interface DocxPreviewResult {
   text: string;
   featureCount: number;
   warnings: string[];
+  status: 'rendered' | 'partial' | 'unavailable' | 'failed';
 }
 
 const MAX_PACKAGE_BYTES = 20 * 1024 * 1024;
 const MAX_XML_BYTES = 8 * 1024 * 1024;
 
+function toUint8Array(source: ArrayBuffer | Uint8Array): Uint8Array {
+  return source instanceof Uint8Array ? source : new Uint8Array(source);
+}
+
+/** Text-only DOCX inspection for evidence/comparison. Visual rendering uses docx-preview in DocxPreviewPane. */
 export async function renderDocxPreview(arrayBuffer: ArrayBuffer): Promise<DocxPreviewResult> {
   if (arrayBuffer.byteLength === 0 || arrayBuffer.byteLength > MAX_PACKAGE_BYTES) {
-    return { html: '<div class="preview-unavailable">DOCX preview unavailable: the file is empty or exceeds the preview size limit.</div>', text: '', featureCount: 0, warnings: ['The DOCX is empty or exceeds the preview size limit.'] };
+    return { html: '', text: '', featureCount: 0, warnings: ['The DOCX is empty or exceeds the preview size limit.'], status: 'unavailable' };
   }
 
-  const { renderAsync } = await import('docx-preview');
-  const warnings: string[] = [];
-  let featureCount = 0;
-  let html = '';
-  let text = '';
-  const textParts: string[] = [];
-
   try {
-    const zip = await JSZip.loadAsync(arrayBuffer);
+    const zip = await JSZip.loadAsync(toUint8Array(arrayBuffer));
     const docXml = await zip.file('word/document.xml')?.async('text');
 
     if (!docXml) {
-      warnings.push('No document.xml found in DOCX package');
-      return { html: '<div class="preview-failed">Invalid DOCX: missing document.xml</div>', text: '', featureCount: 0, warnings };
+      return { html: '', text: '', featureCount: 0, warnings: ['No document.xml found in DOCX package'], status: 'unavailable' };
     }
     if (docXml.length > MAX_XML_BYTES) {
-      warnings.push('The DOCX document part exceeds the preview limit.');
-      return { html: '<div class="preview-unavailable">DOCX preview unavailable: the document part exceeds the preview limit.</div>', text: '', featureCount: 0, warnings };
+      return { html: '', text: '', featureCount: 0, warnings: ['The DOCX document part exceeds the preview limit.'], status: 'unavailable' };
     }
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(docXml, 'application/xml');
 
     const paragraphs = doc.getElementsByTagName('w:p');
-    featureCount += paragraphs.length;
-
     const tables = doc.getElementsByTagName('w:tbl');
-    featureCount += tables.length;
-
     const images = doc.getElementsByTagName('w:drawing');
-    featureCount += images.length;
-
     const hyperlinks = doc.getElementsByTagName('w:hyperlink');
-    featureCount += hyperlinks.length;
+    const featureCount = paragraphs.length + tables.length + images.length + hyperlinks.length;
 
-    const unsupported = doc.getElementsByTagName('w:object');
-    if (unsupported.length > 0) warnings.push('Some embedded DOCX objects are not rendered.');
+    const warnings: string[] = [];
+    const unsupported = ['w:altChunk', 'w:object', 'w:fldSimple', 'w:smartTag'].filter((tag) => docXml.includes(`<${tag}`));
+    if (unsupported.length) warnings.push(`Some DOCX features are not rendered: ${unsupported.join(', ')}.`);
+    if (docXml.includes('r:embed') && !zip.file(/word\/media\/.+/).length) warnings.push('Some embedded images are missing and were omitted from preview.');
     if (tables.length > 0) warnings.push(`${tables.length} table(s) detected`);
     if (images.length > 0) warnings.push(`${images.length} image(s) detected`);
     if (hyperlinks.length > 0) warnings.push(`${hyperlinks.length} hyperlink(s) detected`);
 
+    const textParts: string[] = [];
     for (let i = 0; i < paragraphs.length; i++) {
       const textNodes = paragraphs[i].getElementsByTagName('w:t');
       let paragraphText = '';
@@ -64,19 +58,14 @@ export async function renderDocxPreview(arrayBuffer: ArrayBuffer): Promise<DocxP
       }
       if (paragraphText.trim()) textParts.push(paragraphText.trim());
     }
-    text = textParts.join('\n');
+    const text = textParts.join('\n');
 
-    const container = document.createElement('div');
-    container.className = 'docx-preview-container';
-    await renderAsync(arrayBuffer, container);
-    html = container.innerHTML;
-  } catch (error) {
-    warnings.push(`DOCX preview error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    html = '<div class="preview-failed">Failed to render DOCX preview</div>';
-    text = '';
-    featureCount = 0;
-    textParts.length = 0;
+    if (!text) {
+      return { html: '', text: '', featureCount: 0, warnings: ['No readable text was found in this DOCX.'], status: 'unavailable' };
+    }
+
+    return { html: '', text, featureCount, warnings, status: warnings.length ? 'partial' : 'rendered' };
+  } catch {
+    return { html: '', text: '', featureCount: 0, warnings: ['This DOCX package could not be safely read.'], status: 'failed' };
   }
-
-  return { html, text, featureCount, warnings };
 }

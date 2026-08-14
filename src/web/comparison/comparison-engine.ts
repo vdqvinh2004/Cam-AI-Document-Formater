@@ -6,6 +6,10 @@ export interface ComparisonInput {
   sourceFormat: 'txt' | 'markdown' | 'docx' | 'pdf';
   resultFormat: 'txt' | 'markdown' | 'docx' | 'pdf';
   validationStatus: ValidationStatus;
+  /** Count of formatting operations that were actually applied (deterministic or merged). */
+  appliedChanges?: number;
+  /** True when the style may structurally reorder blocks (Custom style). */
+  allowReorder?: boolean;
 }
 
 const CONTENT_TOKEN_BREAKS: RegExp[] = [
@@ -32,29 +36,36 @@ function tokensExact(source: string[], result: string[]): boolean {
   return source.length === result.length && source.every((token, index) => token === result[index]);
 }
 
+/** Order-insensitive but complete: every token present, counts identical, order may differ. */
+function tokensComplete(source: string[], result: string[]): boolean {
+  if (source.length !== result.length) return false;
+  const sortedSource = [...source].sort();
+  const sortedResult = [...result].sort();
+  return sortedSource.every((token, index) => token === sortedResult[index]);
+}
+
 export function compareDocuments(input: ComparisonInput): ComparisonEvidence {
   const { sourceText, resultText, sourceFormat, resultFormat, validationStatus } = input;
 
-  if (sourceFormat === 'pdf') {
+  if (sourceFormat === 'pdf' || resultFormat === 'pdf') {
     return compareBinaryFormats(sourceFormat, resultFormat, validationStatus);
   }
 
-  if (sourceFormat === 'docx') {
-    return compareTextDocuments(sourceText, resultText, validationStatus, false);
-  }
-
-  return compareTextDocuments(sourceText, resultText, validationStatus, true);
+  return compareTextDocuments(sourceText, resultText, sourceFormat === 'markdown' || sourceFormat === 'docx', input);
 }
 
 function compareTextDocuments(
   sourceText: string,
   resultText: string,
-  validationStatus: ValidationStatus,
   includeMarkdownStructure: boolean,
+  input: ComparisonInput
 ): ComparisonEvidence {
+  const { appliedChanges = 0, allowReorder = false, validationStatus } = input;
   const sourceTokens = normalizeContentTokens(sourceText);
   const resultTokens = normalizeContentTokens(resultText);
-  const contentExact = sourceTokens.length > 0 && tokensExact(sourceTokens, resultTokens);
+  const orderedExact = sourceTokens.length > 0 && tokensExact(sourceTokens, resultTokens);
+  const completeWhenReordered = allowReorder && sourceTokens.length > 0 && tokensComplete(sourceTokens, resultTokens);
+  const contentExact = allowReorder ? completeWhenReordered : orderedExact;
 
   const rows: ComparisonRow[] = [];
   const categories: ComparisonEvidence['categories'] = [];
@@ -65,7 +76,9 @@ function compareTextDocuments(
     before: sourceText.slice(0, 200),
     after: resultText.slice(0, 200),
     explanation: contentExact
-      ? '100% of the original content is preserved; only presentation may differ'
+      ? allowReorder
+        ? 'All original content is preserved; only presentation and section order may differ'
+        : '100% of the original content is preserved; only presentation may differ'
       : 'Content changed: the result text is not 100% identical to the source',
   });
   categories.push('content');
@@ -98,8 +111,24 @@ function compareTextDocuments(
     }
   }
 
+  const reordered = allowReorder && !orderedExact && contentExact;
+  if (reordered) {
+    const sourceBlocks = sourceText.split(/\n\s*\n/).length;
+    const resultBlocks = resultText.split(/\n\s*\n/).length;
+    rows.push({
+      location: 'Section order',
+      kind: 'presentation',
+      before: `${sourceBlocks} section(s) in source order`,
+      after: `${resultBlocks} section(s) in formatted order`,
+      explanation: 'Sections were moved by the custom style',
+    });
+    categories.push('structure');
+  }
+
+  if (appliedChanges > 0) categories.push('typography');
+
   const uniqueCategories = [...new Set(categories)];
-  const presentationChanges = rows.some((row) => row.kind !== 'content');
+  const presentationChanges = reordered || appliedChanges > 0 || rows.some((row) => row.kind !== 'content');
 
   let status: ComparisonStatus = 'preserved';
   if (!contentExact) status = 'content-changed';
@@ -108,12 +137,14 @@ function compareTextDocuments(
   return {
     status,
     summary: contentExact
-      ? 'Content preserved exactly; presentation changes detected'
+      ? reordered
+        ? 'Content preserved; sections were moved and presentation changed'
+        : 'Content preserved exactly; presentation changes detected'
       : 'Content changed: the result is not 100% identical to the source. Review before export',
     categories: uniqueCategories.length > 0 ? uniqueCategories : ['content'],
     rows,
     validation: validationStatus,
-    noChangesApplied: contentExact && !presentationChanges,
+    noChangesApplied: contentExact && !presentationChanges && appliedChanges === 0,
   };
 }
 

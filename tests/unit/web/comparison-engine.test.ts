@@ -76,3 +76,32 @@ describe('exact content preservation', () => {
     expect(text('', 'anything').status).toBe('content-changed');
   });
 });
+
+describe('appliedChanges and reorder-aware comparison', () => {
+  it('reports noChangesApplied when content is preserved with zero applied operations', () => {
+    const result = compareDocuments({ sourceText: 'a b c', resultText: 'a b c', sourceFormat: 'txt', resultFormat: 'txt', validationStatus: 'pass', appliedChanges: 0 });
+    expect(result.status).toBe('preserved');
+    expect(result.noChangesApplied).toBe(true);
+  });
+
+  it('reports applied presentation changes when operations were applied', () => {
+    const result = compareDocuments({ sourceText: 'a b c', resultText: 'a b c', sourceFormat: 'txt', resultFormat: 'txt', validationStatus: 'pass', appliedChanges: 3 });
+    expect(result.status).toBe('presentation-changed');
+    expect(result.noChangesApplied).toBe(false);
+    expect(result.categories).toContain('typography');
+  });
+
+  it('accepts reordered content under allowReorder with complete content', () => {
+    const result = compareDocuments({ sourceText: 'one two three', resultText: 'three one two', sourceFormat: 'txt', resultFormat: 'txt', validationStatus: 'pass', allowReorder: true, appliedChanges: 1 });
+    expect(result.status).toBe('presentation-changed');
+    expect(result.noChangesApplied).toBe(false);
+    expect(result.rows.some((row) => row.location === 'Section order')).toBe(true);
+    expect(result.categories).toContain('structure');
+  });
+
+  it('rejects added content even when allowReorder is enabled', () => {
+    const result = compareDocuments({ sourceText: 'one two', resultText: 'one two three four', sourceFormat: 'txt', resultFormat: 'txt', validationStatus: 'pass', allowReorder: true });
+    expect(result.status).toBe('content-changed');
+    expect(result.noChangesApplied).toBe(false);
+  });
+});

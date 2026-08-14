@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, ReactNode, useCallback, useMemo, useEffect } from 'react';
+import { createContext, useContext, useReducer, ReactNode, useCallback, useMemo, useEffect, useState } from 'react';
 import type { WebRoute } from '../types/route';
 import type { PreviewEvidence } from '../types/evidence';
 import type { ComparisonEvidence } from '../types/comparison';
@@ -6,9 +6,7 @@ import type { JobStatus, JobMessage } from '../types/job';
 import type { DashboardPanel } from '../types/panel';
 import { createLocalStorageKeyStore } from '../api-key-storage';
 import { useRouter } from '../router';
-import { readSource, requestFormattingPlan, formatSource, extractDocxText } from '../formatting';
-import { compareDocuments } from '../comparison/comparison-engine';
-import { createSourcePreview, createResultPreview } from '../preview/preview-evidence-factory';
+import { runFormattingJob } from './formatting-flow';
 
 export interface BrowserSource {
   file: File;
@@ -105,6 +103,7 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
 
 interface WorkflowContextValue {
   state: WorkflowState;
+  hasApiKey: boolean;
   navigate: (route: WebRoute) => void;
   setActivePanel: (panel: DashboardPanel) => void;
   runFormatting: () => Promise<void>;
@@ -126,11 +125,15 @@ const WorkflowContext = createContext<WorkflowContextValue | null>(null);
 
 export function WorkflowProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(workflowReducer, initialState);
+  const [keyVersion, setKeyVersion] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
     dispatch({ type: 'SET_ROUTE', payload: router.currentRoute });
   }, [router.currentRoute]);
+
+  const keyStore = useMemo(() => createLocalStorageKeyStore(), []);
+  const hasApiKey = useMemo(() => keyStore.hasKey(), [keyStore, keyVersion]);
 
   const navigate = useCallback((route: WebRoute) => {
     router.navigate(route);
@@ -153,74 +156,29 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const setStyle = useCallback((style: WorkflowState['style']) => dispatch({ type: 'SET_STYLE', payload: style }), []);
   const setInstructions = useCallback((instructions: string) => dispatch({ type: 'SET_INSTRUCTIONS', payload: instructions }), []);
   const setDisclosed = useCallback((disclosed: boolean) => dispatch({ type: 'SET_DISCLOSED', payload: disclosed }), []);
-  const runFormatting = useCallback(async () => {
-    if (!state.source) return;
-    if (!state.disclosed) {
-      setJobStatus({ status: 'blocked', message: 'Confirm the network disclosure before formatting.' });
-      return;
-    }
-    const apiKey = createLocalStorageKeyStore().getKey();
-    if (!apiKey) {
-      setJobStatus({ status: 'blocked', message: 'Configure a Gemini API key before formatting.' });
-      return;
-    }
-    try {
-      setJobStatus({ status: 'generating', message: 'Creating a formatting plan...', progress: 20 });
-      const source = await readSource(state.source.file);
-      const { plan, warnings: planWarnings } = await requestFormattingPlan(source, state.style, state.instructions, apiKey);
-      const warnings = [...planWarnings, 'Formatting plan applied.'];
-      setJobStatus({ status: 'validating', message: 'Applying and validating the formatting plan...', progress: 65 });
-      const formatted = await formatSource(source, plan);
-      const formattingAvailable = formatted.previewAvailable && (formatted.format === 'markdown' || formatted.format === 'txt' || formatted.format === 'docx');
-      const result: BrowserResult = {
-        blob: formatted.blob,
-        format: formatted.format,
-        name: formatted.filename,
-        filename: formatted.filename,
-        validationStatus: 'not-run', // Will be updated after comparison
-        formattingAvailable,
-      };
-      const sourceText = source.format === 'docx' ? await extractDocxText(state.source.arrayBuffer) : source.text;
-      const resultText = formatted.format === 'docx' ? await extractDocxText(await formatted.blob.arrayBuffer()) : (formatted.format === 'markdown' || formatted.format === 'txt') ? await formatted.blob.text() : '';
-      const [sourcePreview, resultPreview] = await Promise.all([
-        createSourcePreview(state.source.arrayBuffer, source.format, state.source.name),
-        createResultPreview(formatted.blob, formatted.format, formattingAvailable),
-      ]);
-      setJobStatus({ status: 'validating', message: 'Verifying that 100% of the content is preserved...', progress: 85 });
-      const comparison = compareDocuments({ sourceText, resultText, sourceFormat: source.format, resultFormat: formatted.format, validationStatus: 'not-run' });
-      const validationPassed = formattingAvailable && comparison.status === 'preserved';
-        const updatedResult: BrowserResult = { ...result, validationStatus: validationPassed ? 'pass' : 'fail' };
-      dispatch({ type: 'SET_SOURCE_PREVIEW', payload: sourcePreview });
-      dispatch({ type: 'SET_RESULT', payload: updatedResult });
-      dispatch({ type: 'SET_RESULT_PREVIEW', payload: resultPreview });
-      const requestedChanges = plan.operations.length > 0;
-      const noChangesApplied = comparison.status === 'preserved' && !requestedChanges;
-      dispatch({ type: 'SET_COMPARISON', payload: { ...comparison, validation: validationPassed ? 'pass' : 'fail', noChangesApplied } });
-      const finalMessage = !validationPassed
-        ? 'Formatting changed document content; export was blocked and the original file was preserved.'
-        : noChangesApplied
-          ? 'Formatting finished, but no style changes were applied — the result is identical to the source. Try another style or adjust instructions.'
-          : warnings.length ? warnings.join(' ') : 'Formatting complete.';
-      setJobStatus({ status: validationPassed ? 'complete' : 'blocked', message: finalMessage, progress: 100 });
-      if (validationPassed) {
-        setActivePanel('review');
-      }
-    } catch (error) {
-      setJobStatus({ status: 'failed', message: error instanceof Error ? error.message : 'Formatting failed.' });
-    }
-  }, [setActivePanel, setJobStatus, state.disclosed, state.instructions, state.source, state.style]);
   const setApiKey = useCallback((apiKey: string) => {
-    const keyStore = createLocalStorageKeyStore();
     keyStore.setKey(apiKey);
-  }, []);
+    setKeyVersion((version) => version + 1);
+  }, [keyStore]);
   const removeApiKey = useCallback(() => {
-    const keyStore = createLocalStorageKeyStore();
     keyStore.removeKey();
-  }, []);
+    setKeyVersion((version) => version + 1);
+  }, [keyStore]);
   const resetWorkflow = useCallback(() => dispatch({ type: 'RESET_WORKFLOW' }), []);
+  const runFormatting = useCallback(async () => {
+    await runFormattingJob(state, {
+      setJobStatus,
+      setSourcePreview,
+      setResultPreview,
+      setResult,
+      setComparison,
+      setActivePanel,
+    });
+  }, [state, setActivePanel, setComparison, setJobStatus, setResult, setResultPreview, setSourcePreview]);
 
   const value = useMemo(() => ({
     state,
+    hasApiKey,
     navigate,
     setActivePanel,
     runFormatting,
@@ -236,7 +194,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setApiKey,
     removeApiKey,
     resetWorkflow,
-  }), [state, navigate, setActivePanel, runFormatting, setSource, setResult, setSourcePreview, setResultPreview, setComparison, setJobStatus, setStyle, setInstructions, setDisclosed, setApiKey, removeApiKey, resetWorkflow]);
+  }), [state, hasApiKey, navigate, setActivePanel, runFormatting, setSource, setResult, setSourcePreview, setResultPreview, setComparison, setJobStatus, setStyle, setInstructions, setDisclosed, setApiKey, removeApiKey, resetWorkflow]);
 
   return <WorkflowContext.Provider value={value}>{children}</WorkflowContext.Provider>;
 }

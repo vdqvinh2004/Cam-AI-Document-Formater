@@ -17,10 +17,21 @@ describe('browser product boundary', () => {
     await expect(readSource(new File([''], 'empty.txt'))).rejects.toThrow('empty');
   });
 
-  it('does not send a Gemini request before a key is available', async () => {
+  it('applies named styles locally and never calls Gemini without a key', async () => {
     const fetcher = vi.fn();
     const source = await readSource(new File(['Body'], 'notes.txt'));
-    await expect(requestFormattingPlan(source, 'modern', '', '', fetcher)).rejects.toThrow('API key');
+    const { plan, aiUsed } = await requestFormattingPlan(source, 'modern', '', '', fetcher);
+    expect(aiUsed).toBe(false);
+    expect(plan.operations).toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    const mdSource = await readSource(new File(['# Title\nBody'], 'notes.md'));
+    const mdPlan = await requestFormattingPlan(mdSource, 'modern', '', '', fetcher);
+    expect(mdPlan.aiUsed).toBe(false);
+    expect(mdPlan.plan.operations.length).toBeGreaterThan(0);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await expect(requestFormattingPlan(mdSource, 'custom', 'make it bold', '', fetcher)).rejects.toThrow('API key');
     expect(fetcher).not.toHaveBeenCalled();
   });
 

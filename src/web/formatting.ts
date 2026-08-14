@@ -1,7 +1,20 @@
-import { resolveBrowserStyle, type BrowserStyleName, type BrowserStyleTokens } from './style-profiles.js';
-import { formatDocx, extractDocxText, type DocxFormattingPlan } from './docx-formatting.js';
+import { resolveBrowserStyle, type BrowserStyleName } from './style-profiles';
+import { formatDocx, extractDocxText, inspectDocx } from './docx-formatting';
+import {
+  markdownStylePlan,
+  docxStylePlan,
+  screenAiPlan,
+  mergePlans,
+  buildMarkdownBlocks,
+  reorderMarkdownLines,
+  hasEmphasisMarkers,
+  type BrowserFormattingOperation,
+  type BrowserFormattingPlan,
+  type BrowserPresentation,
+} from './formatting/style-plan';
 
-export { extractDocxText } from './docx-formatting.js';
+export { extractDocxText } from './docx-formatting';
+export type { BrowserFormattingOperation, BrowserFormattingPlan, BrowserPresentation } from './formatting/style-plan';
 
 export interface BrowserSource {
   file: File;
@@ -20,26 +33,6 @@ export interface BrowserResult {
   warnings: string[];
 }
 
-interface BrowserPresentation {
-  bold?: boolean;
-  italic?: boolean;
-  fontSize?: number;
-  fontFamily?: string;
-  color?: string;
-}
-
-interface BrowserFormattingOperation {
-  kind: 'set-presentation';
-  nodeID: string;
-  presentation: BrowserPresentation;
-}
-
-interface BrowserFormattingPlan {
-  version: number;
-  operations: BrowserFormattingOperation[];
-  warnings?: string[];
-}
-
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const extensionFormats: Record<string, BrowserSource['format']> = {
   '.txt': 'txt', '.md': 'markdown', '.markdown': 'markdown', '.docx': 'docx', '.pdf': 'pdf',
@@ -50,47 +43,111 @@ export function detectFormat(filename: string): BrowserSource['format'] | null {
   return extensionFormats[extension] ?? null;
 }
 
-export async function readSource(file: File): Promise<BrowserSource> {
+export async function readSource(file: File, bytes?: ArrayBuffer): Promise<BrowserSource> {
   if (file.size === 0) throw new Error('That file is empty. Choose a readable document.');
   if (file.size > MAX_FILE_SIZE) throw new Error('Files larger than 20 MB are not supported in the browser.');
   const format = detectFormat(file.name);
   if (!format) throw new Error('That file type is not supported. Choose TXT, Markdown, DOCX, or PDF.');
-  const bytes = await file.arrayBuffer();
-  return { file, format, text: format === 'txt' || format === 'markdown' ? new TextDecoder().decode(bytes) : '', sourceHash: await hashBytes(bytes) };
+  const buffer = bytes ?? await file.arrayBuffer();
+  return { file, format, text: format === 'txt' || format === 'markdown' ? new TextDecoder().decode(buffer) : '', sourceHash: await hashBytes(buffer) };
 }
 
-export async function requestFormattingPlan(source: BrowserSource, style: BrowserStyleName, instructions: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<{ plan: BrowserFormattingPlan; warnings: string[] }> {
+async function docxNodeLists(source: BrowserSource): Promise<{ paragraphNodeIDs: string[]; headingNodeIDs: string[]; blockCount: number } | null> {
+  if (source.format !== 'docx') return null;
+  try {
+    return await inspectDocx(await source.file.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+function validNodeIDsFor(source: BrowserSource, docx: { paragraphNodeIDs: string[]; headingNodeIDs: string[] } | null): Set<string> {
+  if (source.format === 'docx' && docx) {
+    return new Set([...docx.paragraphNodeIDs, ...docx.headingNodeIDs]);
+  }
+  if (source.format === 'markdown') {
+    return new Set(source.text.split(/\r?\n/).map((line, index) => (/^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`)));
+  }
+  return new Set();
+}
+
+export async function requestFormattingPlan(
+  source: BrowserSource,
+  style: BrowserStyleName,
+  instructions: string,
+  apiKey: string,
+  fetcher: typeof fetch = fetch
+): Promise<{ plan: BrowserFormattingPlan; warnings: string[]; aiUsed: boolean }> {
+  const warnings: string[] = [];
+  const docx = await docxNodeLists(source);
+
+  let base: BrowserFormattingPlan;
+  if (source.format === 'docx') {
+    if (!docx) throw new Error('This DOCX package cannot be read for formatting.');
+    base = docxStylePlan(style, docx.paragraphNodeIDs, docx.headingNodeIDs);
+  } else if (source.format === 'markdown') {
+    base = markdownStylePlan(style, source.text);
+  } else {
+    base = { version: 1, operations: [] };
+    warnings.push('This format cannot store presentation changes in the browser; the original file was preserved.');
+  }
+
+  if (style !== 'custom') {
+    return { plan: base, warnings, aiUsed: false };
+  }
+
+  const description = instructions.trim();
+  if (!description) throw new Error('Describe the custom style before formatting.');
   if (!apiKey) throw new Error('Configure a Gemini API key before formatting.');
-  const warnings = source.format === 'txt' || source.format === 'markdown' || source.format === 'docx' ? [] : ['Preview is unavailable for this format; the original file will be preserved.'];
+
   const tokens = resolveBrowserStyle(style);
+  const blockCount = source.format === 'docx' ? docx?.blockCount ?? 0 : buildMarkdownBlocks(source.text).length;
+  const prompt = [
+    'Return JSON only matching {"version":1,"operations":[],"warnings":[]}.',
+    'Operations must be one of:',
+    '- {"kind":"set-presentation","nodeID":"p3","presentation":{"bold":true,"italic":false,"fontSize":12,"fontFamily":"Georgia","color":"#000000"}}',
+    '- {"kind":"move","nodeID":"h1","targetIndex":2}',
+    'Use only existing node IDs: headings are h<i> (i = line or paragraph index), paragraphs are p<i>.',
+    `targetIndex must be an integer in [0, ${Math.max(0, blockCount - 1)}].`,
+    'You may only set bold, italic, fontSize (6-72), fontFamily, color (hex without #), or move a section to a different position.',
+    'Never add, delete, or rewrite any text.',
+    `Style: ${JSON.stringify(tokens)}.`,
+    `Instructions: ${description.slice(0, 2000)}.`,
+    `Format: ${source.format}`,
+  ].join(' ');
+
   const response = await fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({ contents: [{ parts: [{ text: `Return JSON only matching {"version":1,"operations":[{"kind":"set-presentation","nodeID":"p0","presentation":{"bold":true,"italic":false,"fontSize":12,"fontFamily":"Georgia","color":"#000000"}}],"warnings":[]}. Use only existing node IDs. Presentation fields only: bold, italic, fontSize (points), fontFamily (the exact family from the style tokens below), color (hex without #). Do not change content. Style: ${JSON.stringify(tokens)}. Instructions: ${instructions.slice(0, 2000)}. Format: ${source.format}` }] }] }),
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
   });
   if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
+
   const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   const rawPlan = payload.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '').trim();
   if (!rawPlan) throw new Error('Gemini returned an empty formatting plan.');
-  let plan: BrowserFormattingPlan;
-  try { plan = JSON.parse(rawPlan) as BrowserFormattingPlan; }
-  catch { throw new Error('Gemini returned an invalid formatting plan.'); }
-  if (plan.version !== 1 || !Array.isArray(plan.operations)) throw new Error('Gemini returned an unsupported formatting plan.');
-  return { plan, warnings: [...warnings, ...(plan.warnings ?? [])] };
+
+  let aiPlan: BrowserFormattingPlan;
+  try {
+    aiPlan = JSON.parse(rawPlan) as BrowserFormattingPlan;
+  } catch {
+    throw new Error('Gemini returned an invalid formatting plan.');
+  }
+  if (aiPlan.version !== 1 || !Array.isArray(aiPlan.operations)) throw new Error('Gemini returned an unsupported formatting plan.');
+
+  const { plan: screened, warnings: screeningWarnings } = screenAiPlan(aiPlan, validNodeIDsFor(source, docx), blockCount);
+  warnings.push(...screeningWarnings);
+  const plan = mergePlans(base, screened);
+  return { plan, warnings, aiUsed: true };
 }
 
 export async function formatSource(source: BrowserSource, plan: BrowserFormattingPlan): Promise<BrowserResult> {
   if (source.format === 'docx') {
     try {
       const bytes = await source.file.arrayBuffer();
-      const docxPlan: DocxFormattingPlan = {
-        version: plan.version,
-        operations: plan.operations.map((operation) => ({ nodeID: operation.nodeID, ...operation.presentation })),
-        warnings: plan.warnings,
-      };
-      const blob = await formatDocx(bytes, docxPlan);
+      const blob = await formatDocx(bytes, plan);
       return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: true, warnings: [] };
     } catch (error) {
-      // If DOCX formatting fails, return the original file preserved
       return {
         filename: source.file.name,
         blob: source.file,
@@ -98,7 +155,7 @@ export async function formatSource(source: BrowserSource, plan: BrowserFormattin
         sourceHash: source.sourceHash,
         contentPreserved: true,
         previewAvailable: false,
-        warnings: [`DOCX formatting failed: ${error instanceof Error ? error.message : 'Unknown error'}`]
+        warnings: [`DOCX formatting failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
       };
     }
   }
@@ -112,24 +169,34 @@ export async function formatSource(source: BrowserSource, plan: BrowserFormattin
   return { filename: source.file.name, blob, format: source.format, sourceHash: source.sourceHash, contentPreserved: true, previewAvailable: source.format === 'txt' || source.format === 'markdown', warnings };
 }
 
-function applyMarkdownPlan(source: string, plan: BrowserFormattingPlan): string {
-  const operations = new Map(plan.operations.map((operation) => [operation.nodeID, operation]));
-  return source.split(/\r?\n/).map((line, index) => {
-    const nodeID = /^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`;
-    const presentation = operations.get(nodeID)?.presentation;
-    if (!presentation) return line;
-    const content = line.replace(/^(#{1,6}\s+)/, '');
-    const prefix = line.slice(0, line.length - content.length);
-    const marked = presentation.bold && presentation.italic ? `***${content}***` : presentation.bold ? `**${content}**` : presentation.italic ? `*${content}*` : content;
-    return `${prefix}${marked}`;
-  }).join('\n');
-}
+export function applyMarkdownPlan(source: string, plan: BrowserFormattingPlan): string {
+  const presentationOps = new Map(
+    plan.operations.filter((op) => op.kind === 'set-presentation').map((op) => [op.nodeID, (op as Extract<BrowserFormattingOperation, { kind: 'set-presentation' }>).presentation])
+  );
 
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = filename.replace(/(\.[^.]+)?$/, '-formatted$1'); anchor.click();
-  URL.revokeObjectURL(url);
+  const styled = source.split(/\r?\n/).map((line, index) => {
+    if (hasEmphasisMarkers(line)) return line;
+    const nodeID = /^#{1,6}\s/.test(line) ? `h${index}` : `p${index}`;
+    const presentation = presentationOps.get(nodeID);
+    if (!presentation) return line;
+    const listMarker = line.match(/^(\s*(?:[-*+]|\d+\.)\s+)/)?.[1] ?? '';
+    const content = listMarker ? line.slice(listMarker.length) : line.replace(/^(#{1,6}\s+)/, '');
+    const prefix = listMarker || line.slice(0, line.length - content.length);
+    const marked = presentation.bold && presentation.italic
+      ? `***${content}***`
+      : presentation.bold
+        ? `**${content}**`
+        : presentation.italic
+          ? `*${content}*`
+          : content;
+    return `${prefix}${marked}`;
+  });
+
+  const moves = plan.operations
+    .filter((op) => op.kind === 'move')
+    .map((op) => ({ nodeID: op.nodeID, targetIndex: (op as Extract<BrowserFormattingOperation, { kind: 'move' }>).targetIndex }));
+
+  return reorderMarkdownLines(source, styled, moves);
 }
 
 async function hashBytes(bytes: ArrayBuffer): Promise<string> {

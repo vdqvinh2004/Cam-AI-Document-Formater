@@ -172,6 +172,47 @@ tests/web/
 4. Run `yarn typecheck`, `yarn lint`, `yarn test`, `yarn test:e2e`, and `yarn build`.
 5. Inspect browser storage after successful, failed, and refreshed workflows to verify no document contents or history persist.
 
+## Wave 7: System Optimization & Formatting Reliability
+
+**Status**: Approved 2026-08-15 | **Spec**: [spec.md](spec.md) | **Tasks**: T200-T230 in [tasks.md](tasks.md)
+
+### Summary
+
+Make formatting reliable and observable. Named styles are applied **locally and deterministically** from
+style-profile tokens (no Gemini nodeID guessing, no network) so every style always produces a different,
+visible result. Custom style requires a non-empty description and uses Gemini to interpret presentation
+hints plus section **moves** (structural reorder allowed per product decision); add/delete/rewrite
+operations are screened out. DOCX preview renders through the `docx-preview` library into the live DOM for
+both the source and the result. Exported files get a `_cam_formatted` suffix before the extension. Dead
+code and unused dependencies are removed, orchestration moves out of the workflow store, and a
+style-matrix test suite proves each style formats differently while preserving 100% of the content.
+
+### Key Decisions
+
+- **Named styles are local**: `simple | modern | professional | easy-to-read | academic` apply presentation
+  only, offline, from the existing `style-profiles` tokens. Gemini is used only for Custom style.
+- **Custom allows reorder**: per product decision, Custom may move sections. Comparison switches to an
+  order-insensitive-but-complete (multiset) content check when moves are present; presentation moves are
+  listed as structural changes; any loss of content still blocks export.
+- **Filename suffix**: `_cam_formatted` (corrected spelling), inserted before the last extension.
+- **DOCX preview**: `docx-preview.renderAsync` renders into the live preview container for source and
+  result; text extraction for comparison stays in the evidence path; fail-closed states remain.
+
+### Implementation Phases
+
+1. **7a Cleanup**: delete 4 dead modules, 9 unused shadcn/ui files, 9 unused `@radix-ui/*` deps; migrate orphaned tests.
+2. **7b DOCX preview**: `DocxPreviewPane` (live `renderAsync`) + `TextPreviewPane`; evidence path becomes text-only.
+3. **7c Styles**: `style-plan.ts` deterministic per-node plans; `move` op schema + Gemini screening; custom requires description; `noChangesApplied` computed from applied ops; multiset comparison for moves.
+4. **7d Suffix**: `lib/filename.ts` + single download path.
+5. **7e Structure**: `StepIndicator`, `formatBytes`, `formatting-flow.ts`, reactive `hasApiKey`, single buffer read.
+6. **7f Verification**: style matrix, custom screening, suffix, updated e2e gates, full suite.
+
+### Risks & Mitigations
+
+- **DOCX move safety**: only direct `w:body` paragraph children are movable; other parts (tables, drawings) keep positions; content equality is re-verified before export.
+- **AI nodeID mismatch**: base deterministic plan guarantees visible formatting; AI ops that do not match valid nodeIDs are dropped with warnings.
+- **Double emphasis in Markdown**: lines already containing emphasis markers are skipped by the applier.
+
 ## Risks and Mitigations
 
 - **No safe DOCX writer**: Keep formatting/export unavailable rather than claiming success; implement package-preserving OOXML edits only with fixtures and round-trip checks.

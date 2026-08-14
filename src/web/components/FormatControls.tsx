@@ -15,6 +15,7 @@ const STYLES = ['simple', 'modern', 'professional', 'easy-to-read', 'academic', 
 
 export function FormatControls() {
   const { state, setStyle, setInstructions, setDisclosed } = useWorkflow();
+  const customStyle = state.style === 'custom';
 
   return (
     <div className="space-y-6">
@@ -39,11 +40,16 @@ export function FormatControls() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {customStyle && !state.instructions.trim() && (
+          <p className="text-sm text-warning" role="alert">Describe the custom style before formatting.</p>
+        )}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="custom-instructions">Custom Instructions</Label>
+          <Label htmlFor="custom-instructions">
+            {customStyle ? 'Custom Style Description (required)' : 'Custom Instructions (optional)'}
+          </Label>
           <span className="text-xs text-muted-foreground">{state.instructions.length}/2000 characters</span>
         </div>
         <Textarea
@@ -51,7 +57,13 @@ export function FormatControls() {
           value={state.instructions}
           onChange={(e) => setInstructions(e.target.value)}
           maxLength={2000}
-          placeholder="Presentation guidance only (e.g., 'Use larger headings', 'Increase line spacing')"
+          required={customStyle}
+          aria-required={customStyle}
+          placeholder={
+            customStyle
+              ? "Describe the style, e.g. 'Move the introduction after the summary and keep the same format'"
+              : "Presentation guidance only (e.g., 'Use larger headings', 'Increase line spacing')"
+          }
           rows={4}
         />
       </div>
@@ -64,7 +76,7 @@ export function FormatControls() {
             onCheckedChange={(checked) => setDisclosed(checked === true)}
           />
           <span>
-            I understand this formatting request sends document structure and formatting preferences to Google's Gemini API. The full document text is never transmitted.
+            Custom style requests send your instructions and document structure to Google's Gemini API. The full document text is never transmitted. Named styles are applied locally in your browser.
           </span>
         </label>
       </div>

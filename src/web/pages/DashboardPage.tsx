@@ -7,23 +7,28 @@ import { JobStatus } from '../components/JobStatus';
 import { PreviewPanel } from '../components/PreviewPanel';
 import { ComparisonSummary } from '../components/ComparisonSummary';
 import { ExportActions } from '../components/ExportActions';
+import { StepIndicator, type StepDefinition } from '../components/StepIndicator';
 import { readSource } from '../formatting';
-import { createLocalStorageKeyStore } from '../api-key-storage';
+import { formatBytes } from '../lib/format';
+import { withFormattedSuffix } from '../lib/filename';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
 import { UploadCloud, SlidersHorizontal, CheckCircle2 } from 'lucide-react';
 
-const STEPS: { panel: DashboardPanel; label: string; icon: typeof UploadCloud }[] = [
+const STEPS: StepDefinition[] = [
   { panel: 'upload', label: 'Upload', icon: UploadCloud },
   { panel: 'configure', label: 'Configure', icon: SlidersHorizontal },
   { panel: 'review', label: 'Review', icon: CheckCircle2 },
 ];
 
 export function DashboardPage() {
-  const { state, setActivePanel, setSource, setJobStatus, runFormatting } = useWorkflow();
-  const { source, result, activePanel, jobStatus, jobMessage, jobProgress } = state;
-  const hasApiKey = !!createLocalStorageKeyStore().getKey();
+  const { state, hasApiKey, setActivePanel, setSource, setJobStatus, runFormatting } = useWorkflow();
+  const { source, result, activePanel, jobStatus, jobMessage, jobProgress, style, disclosed, instructions } = state;
+
+  const customStyle = style === 'custom';
+  const customReady = hasApiKey && disclosed && instructions.trim().length > 0;
+  const busy = ['generating', 'validating'].includes(jobStatus);
+  const startDisabled = customStyle ? !customReady : false;
 
   const stepGate: Record<DashboardPanel, { available: boolean; reason: string | null }> = {
     upload: { available: true, reason: null },
@@ -44,13 +49,14 @@ export function DashboardPage() {
 
   const handleFileSelect = async (file: File) => {
     try {
-      const sourceData = await readSource(file);
+      const bytes = await file.arrayBuffer();
+      const sourceData = await readSource(file, bytes);
       setSource({
         file,
         format: sourceData.format,
         name: file.name,
         size: file.size,
-        arrayBuffer: await file.arrayBuffer(),
+        arrayBuffer: bytes,
       });
       setJobStatus({ status: 'ready', message: 'File loaded. Configure formatting options.' });
       setActivePanel('configure');
@@ -60,7 +66,7 @@ export function DashboardPage() {
   };
 
   const handleStart = async () => {
-    if (!state.disclosed) return;
+    if (startDisabled || busy) return;
     await runFormatting();
   };
 
@@ -71,7 +77,7 @@ export function DashboardPage() {
         <p className="text-muted-foreground">Upload a document, choose a style, and review the formatted result — all in your browser.</p>
       </header>
 
-      <StepIndicator current={activePanel} onSelect={setActivePanel} gate={stepGate} />
+      <StepIndicator current={activePanel} onSelect={setActivePanel} gate={stepGate} steps={STEPS} />
 
       {activePanel === 'upload' && (
         <Card>
@@ -117,8 +123,20 @@ export function DashboardPage() {
                 <FormatControls />
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button variant="secondary" onClick={() => setActivePanel('upload')}>Back</Button>
-                  <Button onClick={handleStart} disabled={!state.disclosed || !hasApiKey || ['generating', 'validating'].includes(jobStatus)} title={!hasApiKey ? 'Add a Gemini API key in Settings first.' : undefined}>
-                    {['generating', 'validating'].includes(jobStatus) ? 'Processing...' : 'Start Formatting'}
+                  <Button
+                    onClick={handleStart}
+                    disabled={busy || startDisabled}
+                    title={
+                      customStyle && !customReady
+                        ? !hasApiKey
+                          ? 'Add a Gemini API key in Settings first.'
+                          : !disclosed
+                            ? 'Confirm the network disclosure for the custom style.'
+                            : 'Describe the custom style before formatting.'
+                        : undefined
+                    }
+                  >
+                    {busy ? 'Processing...' : 'Start Formatting'}
                   </Button>
                 </div>
               </>
@@ -133,7 +151,7 @@ export function DashboardPage() {
           <CardHeader>
             <CardTitle>Review results</CardTitle>
             <CardDescription>
-              {result ? `Output: ${result.filename ?? result.name} (${result.format.toUpperCase()})` : 'No formatting result yet.'}
+              {result ? `Output: ${withFormattedSuffix(result.filename ?? result.name)} (${result.format.toUpperCase()})` : 'No formatting result yet.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -159,44 +177,4 @@ export function DashboardPage() {
       )}
     </div>
   );
-}
-
-function StepIndicator({ current, onSelect, gate }: { current: DashboardPanel; onSelect: (panel: DashboardPanel) => void; gate: Record<DashboardPanel, { available: boolean; reason: string | null }> }) {
-  return (
-    <ol className="flex flex-wrap items-center gap-2" aria-label="Progress">
-      {STEPS.map((step, index) => {
-        const Icon = step.icon;
-        const isActive = current === step.panel;
-        const isComplete = STEPS.findIndex((s) => s.panel === current) > index;
-        const { available, reason } = gate[step.panel];
-        return (
-          <li key={step.panel} className="flex flex-1 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onSelect(step.panel)}
-              disabled={!available}
-              title={reason ?? undefined}
-              aria-disabled={!available}
-              className={cn(
-                'flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99]',
-                isActive ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent',
-                isComplete && 'border-transparent bg-muted',
-                !available && 'cursor-not-allowed border-transparent bg-muted text-muted-foreground opacity-60 hover:bg-muted'
-              )}
-            >
-              <Icon className={cn('h-4 w-4', isActive && 'text-primary')} aria-hidden="true" />
-              {step.label}
-            </button>
-            {index < STEPS.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden="true" />}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
