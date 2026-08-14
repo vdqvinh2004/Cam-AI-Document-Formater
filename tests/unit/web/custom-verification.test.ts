@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyMarkdownPlan, clarifyCustomInstructions, runCustomFormatting, verifyCustomResult, type BrowserSource } from '../../../src/web/formatting';
 import { compareDocuments } from '../../../src/web/comparison/comparison-engine';
 import { screenAiPlan } from '../../../src/web/formatting/style-plan';
-import { extractDocxText, formatDocx } from '../../../src/web/docx-formatting';
+import { extractDocxText, formatDocx, inspectDocx } from '../../../src/web/docx-formatting';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -147,6 +147,59 @@ describe('verifyCustomResult', () => {
 });
 
 describe('runCustomFormatting', () => {
+  it('repairs an empty plan when the verification stage can suggest a valid move from the node map', async () => {
+    const buffer = readFileSync(join(__dirname, '..', '..', 'fixtures', 'docx', 'sample-rich.docx'));
+    const bytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const file = new File([bytes], 'sample-rich.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const source: BrowserSource = { file, format: 'docx', text: '', sourceHash: 'hash' };
+    const inspection = await inspectDocx(bytes);
+
+    const fetcher = stagedFetcher([
+      {
+        when: (body) => body.includes('plan a document-formatting step'),
+        text: JSON.stringify({ clarifiedDescription: 'Move the Introduction section to the end of the document', affectsContent: false, reason: '' }),
+      },
+      {
+        when: (body) => body.includes('Return JSON only matching'),
+        text: planText({ version: 1, operations: [], warnings: [] }),
+      },
+      {
+        when: (body) => body.includes('verify a document-formatting'),
+        text: JSON.stringify({ matches: false, reason: 'Introduction was not moved', operations: [{ kind: 'move', nodeID: 'h1', targetIndex: inspection.blockCount - 1 }] }),
+        consume: true,
+      },
+      {
+        when: (body) => body.includes('verify a document-formatting'),
+        text: JSON.stringify({ matches: true, reason: 'Introduction moved to the end', operations: [] }),
+        consume: true,
+      },
+    ]);
+
+    const outcome = await runCustomFormatting(source, 'move the Introduction section to the end', 'key', fetcher);
+    expect(outcome.refinements).toBe(1);
+    expect(outcome.verificationNote).toBe('AI verified the result matches your description.');
+    expect(outcome.plan.operations.some((op) => op.kind === 'move' && op.nodeID === 'h1')).toBe(true);
+
+    const resultText = await extractDocxText(await outcome.formatted.blob.arrayBuffer());
+    const sourceText = await extractDocxText(bytes);
+    expect(resultText.split('\n').filter(Boolean).sort()).toEqual(sourceText.split('\n').filter(Boolean).sort());
+    expect(resultText.indexOf('Introduction')).toBeGreaterThan(resultText.indexOf('End of document.'));
+  });
+
+  it('sends the node map to the verification stage so corrective operations use valid node IDs', async () => {
+    let requestBody = '';
+    const fetcher = async (_url: string, init?: RequestInit) => {
+      requestBody = String(init?.body);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"matches":true,"reason":"ok","operations":[]}' }] } }] }), { status: 200 });
+    };
+    await verifyCustomResult('move section two before section one', 'FIRST\nSECOND', 'FIRST\nSECOND', 'markdown', 'key', fetcher as typeof fetch, 'h0: "# Title"\np1: "First paragraph"');
+    const promptText = JSON.parse(requestBody).contents[0].parts[0].text as string;
+    expect(promptText).toContain('Document nodes:');
+    expect(promptText).toContain('h0: "# Title"');
+    expect(promptText).toContain('p1: "First paragraph"');
+    expect(promptText).toContain('Operations must reference node IDs listed in "Document nodes"');
+  });
+
   it('clarifies, formulates, verifies, and refines once until the result matches', async () => {
     const fetcher = stagedFetcher([
       {
