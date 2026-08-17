@@ -8,12 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/sonner';
+import { useTheme } from '@/providers/ThemeProvider';
+import { Moon, Sun } from 'lucide-react';
 
 const keyStore = createLocalStorageKeyStore();
 
 export function SettingsPage() {
   const { setApiKey, removeApiKey } = useWorkflow();
   const { navigate } = useRouter();
+  const { theme, toggleTheme } = useTheme();
   const [key, setKey] = useState('');
   const [hasKey, setHasKey] = useState(() => keyStore.hasKey());
 
@@ -65,6 +68,23 @@ export function SettingsPage() {
               {hasKey ? 'Replace Key' : 'Save Key'}
             </Button>
             {hasKey && <Button variant="destructive" onClick={handleDelete}>Delete Key</Button>}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Theme</p>
+              <p className="text-sm text-muted-foreground">Choose light, dark, or follow system</p>
+            </div>
+            <Button variant="outline" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </Button>
           </div>
         </CardContent>
       </Card>

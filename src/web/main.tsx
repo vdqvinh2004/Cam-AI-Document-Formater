@@ -7,6 +7,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { WorkflowProvider, useWorkflow } from './state/workflow-context';
+import { ThemeProvider } from './providers/ThemeProvider';
 import './styles/globals.css';
 
 function RoutedPage() {
@@ -38,12 +39,14 @@ function DeepLinkRedirect() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Router>
-      <WorkflowProvider>
-        <AppShell>
-          <RoutedPage />
-        </AppShell>
-      </WorkflowProvider>
-    </Router>
+    <ThemeProvider>
+      <Router>
+        <WorkflowProvider>
+          <AppShell>
+            <RoutedPage />
+          </AppShell>
+        </WorkflowProvider>
+      </Router>
+    </ThemeProvider>
   </StrictMode>
 );

@@ -6,19 +6,23 @@ async function globals() {
 }
 
 describe('design system tokens', () => {
-  it('defines a warm paper background and green/orange accents via HSL vars', async () => {
+  it('defines SaaS (General) palette with trust blue primary and orange accent via HSL vars', async () => {
     const css = await globals();
-    expect(css).toMatch(/--background:\s*48 33% 97%/);
-    expect(css).toMatch(/--primary:\s*20 72% 50%/);
-    expect(css).toMatch(/--secondary:\s*162/);
-    expect(css).toContain('--accent');
+    // Official SaaS (General) palette from ui-ux-pro-max data
+    expect(css).toMatch(/--background:\s*210 40% 98%/);
+    expect(css).toMatch(/--foreground:\s*217 33% 17%/);
+    expect(css).toMatch(/--primary:\s*221 83% 53%/);
+    expect(css).toMatch(/--accent:\s*21 90% 48%/);
     expect(css).toContain('--border');
     expect(css).toContain('--ring');
+    expect(css).toMatch(/--destructive:\s*0 72% 51%/);
+    expect(css).toMatch(/--muted:\s*216 52% 94%/);
   });
 
-  it('exposes a serif display font family', async () => {
+  it('exposes Plus Jakarta Sans as primary sans font family', async () => {
     const css = await globals();
-    expect(css).toMatch(/--font-serif:\s*Georgia/);
+    expect(css).toMatch(/--font-sans:\s*"Plus Jakarta Sans"/);
+    expect(css).toMatch(/--font-mono:\s*"JetBrains Mono"/);
   });
 
   it('keeps a coherent radius scale', async () => {
@@ -42,5 +46,17 @@ describe('design system tokens', () => {
   it('respects reduced motion preferences', async () => {
     const css = await globals();
     expect(css).toContain('prefers-reduced-motion');
+  });
+
+  it('defines dark mode palette', async () => {
+    const css = await globals();
+    expect(css).toMatch(/\.dark\s*\{/);
+    expect(css).toMatch(/--background:\s*217 33% 11%/);
+    expect(css).toMatch(/--foreground:\s*210 40% 98%/);
+  });
+
+  it('includes skip link styles for keyboard accessibility', async () => {
+    const css = await globals();
+    expect(css).toContain('.skip-link');
   });
 });

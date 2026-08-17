@@ -14,10 +14,11 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <header className="app-header border-b">
         <Navigation currentRoute={currentRoute} onNavigate={navigate} />
       </header>
-      <main className="app-main mx-auto w-full max-w-5xl flex-1 px-6 py-8" role="main">
+      <main id="main-content" className="app-main mx-auto w-full max-w-5xl flex-1 px-6 py-8" role="main">
         {children}
       </main>
       <footer className="app-footer border-t">
