@@ -1,15 +1,23 @@
+import { useState } from 'react';
 import type { BrowserSource, BrowserResult } from '../state/workflow-context';
 import { useWorkflow } from '../state/workflow-context';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { withFormattedSuffix } from '../lib/filename';
+import { ComparisonDiffView } from './ComparisonDiffView';
 
 export function ComparisonSummary({ source, result }: { source: BrowserSource; result: BrowserResult }) {
   const { state } = useWorkflow();
+  const [showDiff, setShowDiff] = useState(false);
   const sameFormat = source.format === result.format;
   const formattingAvailable = result.formattingAvailable;
   const validation = result.validationStatus;
   const comparison = state.comparison;
   const outputName = withFormattedSuffix(result.filename ?? result.name);
+
+  const sourceText = state.sourcePreview?.text ?? '';
+  const resultText = state.resultPreview?.text ?? '';
+  const canShowDiff = sourceText.length > 0 && resultText.length > 0;
 
   return (
     <div className="comparison-summary space-y-4 rounded-lg border p-4">
@@ -35,6 +43,26 @@ export function ComparisonSummary({ source, result }: { source: BrowserSource; r
           </ul>
         </>}
       </div>
+      {canShowDiff && (
+        <div className="mt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDiff(!showDiff)}
+            data-testid="toggle-diff"
+            className="mb-2"
+          >
+            {showDiff ? 'Hide diff' : 'Show diff'}
+          </Button>
+          {showDiff && (
+            <ComparisonDiffView
+              sourceText={sourceText}
+              resultText={resultText}
+              className="mt-2"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

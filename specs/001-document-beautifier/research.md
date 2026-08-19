@@ -3,6 +3,12 @@
 **Date**: 2026-07-29
 **Feature**: [spec.md](spec.md)
 
+> **Superseded in later waves**: the "Radix primitives" recommendation below was replaced by
+> shadcn/ui + Tailwind v4 (Wave 2), and the `docx-preview.ts` / monolithic `main.tsx` references
+> were refactored away in Waves 7–9 (DOCX rendering now lives in `src/web/components/preview/` and
+> `src/web/preview/`, and DOCX parse/format/extract run in a Web Worker). This file is kept as the
+> historical decision record; current architecture is in [plan.md](plan.md).
+
 ## Decision: Use a focused internal page/component architecture with a minimal pathname router
 
 **Rationale**: The browser product is a Vite/React SPA with a small number of static workflow pages and no existing routing dependency. A typed route map and shared in-memory workflow context satisfy navigation, privacy, and not-found requirements with less bundle and maintenance cost than a full routing framework. The route layer must render `/`, `/setup`, `/review`, `/settings`, `/privacy`, and a not-found page, while Vercel's existing SPA rewrite remains deployment support.

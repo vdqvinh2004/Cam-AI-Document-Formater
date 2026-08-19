@@ -17,10 +17,10 @@ credentials or document bytes beyond the active local job.
 
 ## Interaction rules
 
-The app supports `Command-O` to open, `Command-Enter` to format, and `Command-Shift-P` to toggle
-preview. Focus returns to the initiating control after a native dialog closes. The minimum window
-is 760 by 560 pixels; layout remains usable through 1800 by 1200 pixels. Reduced motion disables
-decorative transitions while preserving progress and status updates.
+The app menu provides `Command-O` to open a document and `Command-,` to open settings. Focus
+returns to the initiating control after a native dialog closes. The minimum window is 900 by 620
+pixels (`NativeDesignSystem.minimumWindow`); layout remains usable at larger sizes. Reduced motion
+disables decorative transitions while preserving progress and status updates.
 
 ## App versus web
 

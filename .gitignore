@@ -16,3 +16,6 @@ playwright-report/
 .vscode/*.log
 .build/
 .swiftpm/
+.codebase-memory/
+.specify/
+.freebuff/

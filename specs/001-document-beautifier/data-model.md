@@ -13,17 +13,23 @@ The existing `SourceDocument`, `FormattingProfile`, `FormattingJob`, `Validation
 | `requiresDocument` | boolean | Route renders an empty-state recovery action when no active source exists. |
 | `requiresResult` | boolean | Review route blocks result actions until a result exists and validation allows them. |
 
-## WebWorkflowState
+## WebWorkflowState (`WorkflowState` in `src/web/state/workflow-context.tsx`)
 
 | Field | Type | Rules |
 |---|---|---|
+| `currentRoute` | `WebRoute` | Active route from the pathname router. |
+| `activePanel` | `'upload' \| 'configure' \| 'review'` | Dashboard panel; synced to `?panel=` in the URL. |
 | `source` | `BrowserSource \| null` | Held in memory only; original file is never mutated. |
 | `result` | `BrowserResult \| null` | Held in memory only; may be unavailable for unsupported formatting. |
-| `sourcePreview` | `PreviewEvidence` | Read-only and derived from source bytes. |
-| `resultPreview` | `PreviewEvidence` | Derived from actual result bytes, never from a DOCX-to-text substitute when a package exists. |
-| `comparison` | `ComparisonEvidence` | Explicitly categorizes preservation, presentation changes, content changes, or unavailable evidence. |
-| `jobState` | `idle \| ready \| generating \| validating \| complete \| blocked \| failed` | Drives progress and action availability. |
-| `message` | string | User-safe status; no credentials, raw prompts, or sensitive paths. |
+| `sourcePreview` | `PreviewEvidence \| null` | Read-only and derived from source bytes. |
+| `resultPreview` | `PreviewEvidence \| null` | Derived from actual result bytes, never from a DOCX-to-text substitute when a package exists. |
+| `comparison` | `ComparisonEvidence \| null` | Explicitly categorizes preservation, presentation changes, content changes, or unavailable evidence. |
+| `jobStatus` | `'idle' \| 'ready' \| 'generating' \| 'validating' \| 'complete' \| 'blocked' \| 'failed'` | Drives progress and action availability. |
+| `jobMessage` | string | User-safe status; no credentials, raw prompts, or sensitive paths. |
+| `jobProgress` | number? | Optional 0–100 progress for in-flight stages. |
+| `style` | `'simple' \| 'modern' \| 'professional' \| 'easy-to-read' \| 'academic' \| 'custom'` | Selected formatting style. |
+| `instructions` | string | Custom-style description; required when `style === 'custom'`. |
+| `disclosed` | boolean | Network-disclosure confirmation before any Gemini call. |
 
 ## PreviewEvidence
 

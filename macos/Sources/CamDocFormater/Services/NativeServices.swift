@@ -7,11 +7,37 @@ import FoundationNetworking
 public struct HTTPGeminiClient: GeminiClient, Sendable {
     public let session: URLSession
     public let endpoint: URL
+    public let maxRetryAttempts: Int
+    public let retryBaseDelay: TimeInterval
+    public let retryMaxDelay: TimeInterval
 
-    public init(session: URLSession = .shared, endpoint: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent")!) {
+    public init(session: URLSession = .shared, endpoint: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent")!, maxRetryAttempts: Int = 3, retryBaseDelay: TimeInterval = 1.0, retryMaxDelay: TimeInterval = 8.0) {
         self.session = session
         self.endpoint = endpoint
+        self.maxRetryAttempts = maxRetryAttempts
+        self.retryBaseDelay = retryBaseDelay
+        self.retryMaxDelay = retryMaxDelay
     }
+
+    // MARK: - Retry helpers
+
+    private func retryDelay(forAttempt attempt: Int) -> TimeInterval {
+        let exponential = min(retryBaseDelay * pow(2.0, Double(attempt)), retryMaxDelay)
+        let jitter = Double.random(in: 0...(exponential * 0.3))
+        return exponential + jitter
+    }
+
+    private func isRetryableStatus(_ statusCode: Int) -> Bool {
+        return statusCode == 429 || statusCode >= 500
+    }
+
+    private func parseRetryAfter(from response: HTTPURLResponse) -> TimeInterval? {
+        guard let header = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
+        guard let seconds = TimeInterval(header), seconds > 0 else { return nil }
+        return seconds
+    }
+
+    // MARK: - GeminiClient
 
     public func formattingPlan(for document: CanonicalDocument, profile: FormattingProfile, apiKey: String, disclosureAccepted: Bool) async throws -> FormattingPlan {
         guard disclosureAccepted else { throw NativeContractError.missingDisclosure }
@@ -19,25 +45,51 @@ public struct HTTPGeminiClient: GeminiClient, Sendable {
         let body = try JSONSerialization.data(withJSONObject: [
             "contents": [["parts": [["text": "Return presentation-only JSON for \(document.blocks.count) nodes. Style: \(profile.style.rawValue). Instructions: \(String((profile.instructions ?? "").prefix(2000)))"]]]]
         ])
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-        let (data, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw NativeServiceError.requestFailed }
-        guard data.count < 1_000_000 else { throw NativeServiceError.responseTooLarge }
+
+        var lastError: Error?
+        for attempt in 0..<maxRetryAttempts {
+            try Task.checkCancellation()
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.timeoutInterval = 30
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse else { throw NativeServiceError.requestFailed }
+                guard httpResponse.statusCode == 200 else {
+                    if isRetryableStatus(httpResponse.statusCode) && attempt < maxRetryAttempts - 1 {
+                        let delay = parseRetryAfter(from: httpResponse) ?? retryDelay(forAttempt: attempt)
+                        try await Task.sleep(for: .seconds(delay))
+                        continue
+                    }
+                    throw NativeServiceError.requestFailed
+                }
+                guard data.count < 1_000_000 else { throw NativeServiceError.responseTooLarge }
                 guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                            let candidates = root["candidates"] as? [[String: Any]],
-                            let content = candidates.first?["content"] as? [String: Any],
-                            let parts = content["parts"] as? [[String: Any]],
-                            let text = parts.first?["text"] as? String else {
-                        throw NativeServiceError.invalidResponse
+                      let candidates = root["candidates"] as? [[String: Any]],
+                      let content = candidates.first?["content"] as? [String: Any],
+                      let parts = content["parts"] as? [[String: Any]],
+                      let text = parts.first?["text"] as? String else {
+                    throw NativeServiceError.invalidResponse
                 }
                 let cleaned = text.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard let planData = cleaned.data(using: .utf8) else { throw NativeServiceError.invalidResponse }
                 return try JSONDecoder().decode(FormattingPlan.self, from: planData).validated(against: document)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+                if error is NativeServiceError || error is NativeContractError { throw error }
+                if attempt < maxRetryAttempts - 1 {
+                    let delay = retryDelay(forAttempt: attempt)
+                    try await Task.sleep(for: .seconds(delay))
+                    continue
+                }
+            }
+        }
+        throw lastError ?? NativeServiceError.requestFailed
     }
 }
 

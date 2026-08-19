@@ -16,7 +16,7 @@ export interface FormattingFlowApi {
   setActivePanel: (panel: 'upload' | 'configure' | 'review') => void;
 }
 
-export async function runFormattingJob(state: WorkflowState, api: FormattingFlowApi): Promise<void> {
+export async function runFormattingJob(state: WorkflowState, api: FormattingFlowApi, abortSignal?: AbortSignal): Promise<void> {
   const { setJobStatus, setSourcePreview, setResultPreview, setResult, setComparison, setActivePanel } = api;
 
   if (!state.source) {
@@ -44,6 +44,7 @@ export async function runFormattingJob(state: WorkflowState, api: FormattingFlow
     setJobStatus({ status: 'generating', message: requiresGemini ? 'Creating a formatting plan...' : 'Applying the style locally...', progress: 20 });
     const source = await readSource(state.source.file, state.source.arrayBuffer);
     const apiKey = requiresGemini ? createLocalStorageKeyStore().getKey() ?? '' : '';
+    const geminiOptions = requiresGemini ? { signal: abortSignal } : {};
 
     let plan;
     let formatted: Awaited<ReturnType<typeof formatSource>>;
@@ -53,7 +54,7 @@ export async function runFormattingJob(state: WorkflowState, api: FormattingFlow
     let expectedTextChanges: Array<{ source: string; replacement: string }> | undefined;
 
     if (requiresGemini) {
-      const outcome = await runCustomFormatting(source, state.instructions, apiKey, undefined, (stage) => {
+      const outcome = await runCustomFormatting(source, state.instructions, apiKey, geminiOptions, (stage) => {
         setJobStatus({ status: stage.progress >= 60 ? 'validating' : 'generating', message: stage.message, progress: stage.progress });
       });
       plan = outcome.plan;

@@ -117,7 +117,7 @@ export async function requestFormattingPlan(
   style: BrowserStyleName,
   instructions: string,
   apiKey: string,
-  fetcher: typeof fetch = fetch
+  options: GeminiCallOptions = {}
 ): Promise<{ plan: BrowserFormattingPlan; warnings: string[]; aiUsed: boolean }> {
   const warnings: string[] = [];
   const docx = await docxNodeLists(source);
@@ -165,7 +165,7 @@ export async function requestFormattingPlan(
     buildNodeMap(source, docx),
   ].join(' ');
 
-  const rawPlan = await geminiCall(prompt, apiKey, fetcher);
+  const rawPlan = await geminiCall(prompt, apiKey, options);
 
   let aiPlan: BrowserFormattingPlan;
   try {
@@ -187,18 +187,126 @@ export async function requestFormattingPlan(
 }
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+const GEMINI_STREAM_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse';
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 1000;
+const RETRY_MAX_DELAY_MS = 8000;
 
-async function geminiCall(prompt: string, apiKey: string, fetcher: typeof fetch): Promise<string> {
+export interface GeminiCallOptions {
+  fetcher?: typeof fetch;
+  signal?: AbortSignal;
+  onStreamToken?: (tokenCount: number) => void;
+}
+
+function retryDelay(attempt: number): number {
+  const exponential = Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, RETRY_MAX_DELAY_MS);
+  const jitter = Math.random() * exponential * 0.3;
+  return exponential + jitter;
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function parseRetryAfter(response: Response): number | null {
+  const header = response.headers.get('retry-after');
+  if (!header) return null;
+  const seconds = Number(header);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+function extractTextFromPayload(payload: unknown): string {
+  const p = payload as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  const raw = p.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '').trim();
+  return raw ?? '';
+}
+
+async function geminiCallStreaming(prompt: string, apiKey: string, options: GeminiCallOptions): Promise<string> {
+  const { fetcher = fetch, signal, onStreamToken } = options;
+  const response = await fetcher(GEMINI_STREAM_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    signal,
+  });
+  if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
+  if (!response.body) throw new Error('Gemini streaming response has no body.');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+  let tokenCount = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(data) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const chunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+        if (chunk) {
+          fullText += chunk;
+          tokenCount += 1;
+          onStreamToken?.(tokenCount);
+        }
+      } catch {
+        // Skip malformed SSE chunks
+      }
+    }
+  }
+
+  return fullText.replace(/^```json\s*|\s*```$/g, '').trim();
+}
+
+async function geminiCallNonStreaming(prompt: string, apiKey: string, options: GeminiCallOptions): Promise<string> {
+  const { fetcher = fetch, signal } = options;
   const response = await fetcher(GEMINI_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    signal,
   });
   if (!response.ok) throw new Error('Gemini could not create a formatting plan. Check the key or try again.');
-  const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const raw = payload.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/^```json\s*|\s*```$/g, '').trim();
-  if (!raw) throw new Error('Gemini returned an empty response.');
-  return raw;
+  const payload = await response.json();
+  return extractTextFromPayload(payload);
+}
+
+export async function geminiCall(prompt: string, apiKey: string, options: GeminiCallOptions = {}): Promise<string> {
+  const { onStreamToken, ...rest } = options;
+  const callOptions: GeminiCallOptions = { ...rest, onStreamToken };
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+    if (callOptions.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    try {
+      if (onStreamToken) {
+        return await geminiCallStreaming(prompt, apiKey, callOptions);
+      }
+      return await geminiCallNonStreaming(prompt, apiKey, callOptions);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt === MAX_RETRY_ATTEMPTS - 1) break;
+      let delayMs = retryDelay(attempt);
+      if (error instanceof Response || (error as { status?: number }).status) {
+        const status = (error as { status?: number }).status ?? 0;
+        if (!isRetryableStatus(status)) throw lastError;
+        const retryAfter = parseRetryAfter(error as Response);
+        if (retryAfter !== null) delayMs = Math.max(delayMs, retryAfter);
+      } else if (!(error instanceof TypeError)) {
+        throw lastError;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError ?? new Error('Gemini request failed after retries.');
 }
 
 export interface CustomClarification {
@@ -211,7 +319,7 @@ export async function clarifyCustomInstructions(
   description: string,
   format: BrowserSource['format'],
   apiKey: string,
-  fetcher: typeof fetch = fetch
+  options: GeminiCallOptions = {}
 ): Promise<CustomClarification | null> {
   const prompt = [
     'You plan a document-formatting step for another AI. Return JSON only: {"clarifiedDescription":"...","affectsContent":true,"reason":"..."}',
@@ -221,7 +329,7 @@ export async function clarifyCustomInstructions(
     `Format: ${format}`,
   ].join(' ');
   try {
-    const raw = await geminiCall(prompt, apiKey, fetcher);
+    const raw = await geminiCall(prompt, apiKey, options);
     const parsed = JSON.parse(raw) as Partial<CustomClarification>;
     if (typeof parsed.clarifiedDescription !== 'string' || !parsed.clarifiedDescription.trim()) return null;
     return {
@@ -246,7 +354,7 @@ export async function verifyCustomResult(
   sourceText: string,
   format: BrowserSource['format'],
   apiKey: string,
-  fetcher: typeof fetch = fetch,
+  options: GeminiCallOptions = {},
   nodeMap: string = ''
 ): Promise<CustomVerification | null> {
   const prompt = [
@@ -270,7 +378,7 @@ export async function verifyCustomResult(
     formattedText.slice(0, VERIFY_TEXT_CHARS),
   ].join(' ');
   try {
-    const raw = await geminiCall(prompt, apiKey, fetcher);
+    const raw = await geminiCall(prompt, apiKey, options);
     const parsed = JSON.parse(raw) as Partial<CustomVerification>;
     return {
       matches: parsed.matches === true,
@@ -333,7 +441,7 @@ export async function runCustomFormatting(
   source: BrowserSource,
   instructions: string,
   apiKey: string,
-  fetcher: typeof fetch = fetch,
+  options: GeminiCallOptions = {},
   onProgress?: (stage: CustomFormattingProgress) => void
 ): Promise<CustomFormattingOutcome> {
   const warnings: string[] = [];
@@ -346,7 +454,7 @@ export async function runCustomFormatting(
   let clarificationAffectsContent = false;
 
   onProgress?.({ progress: 10, message: 'Analyzing the custom description…' });
-  const clarification = await clarifyCustomInstructions(description, source.format, apiKey, fetcher);
+  const clarification = await clarifyCustomInstructions(description, source.format, apiKey, options);
   const workingDescription = clarification ? clarification.clarifiedDescription : description;
   if (clarification) {
     clarificationAffectsContent = clarification.affectsContent;
@@ -355,7 +463,7 @@ export async function runCustomFormatting(
 
   const docx = await docxNodeLists(source);
   onProgress?.({ progress: 20, message: 'Creating a formatting plan…' });
-  let plan = (await requestFormattingPlan(source, 'custom', workingDescription, apiKey, fetcher)).plan;
+  let plan = (await requestFormattingPlan(source, 'custom', workingDescription, apiKey, options)).plan;
   const blockCount = source.format === 'docx' ? docx?.blockCount ?? 0 : buildMarkdownBlocks(source.text).length;
   const validNodeIDs = validNodeIDsFor(source, docx);
   const headingNodeIDs = source.format === 'docx' && docx
@@ -371,7 +479,7 @@ export async function runCustomFormatting(
   const verificationNodeMap = buildNodeMap(source, docx);
   while (source.format === 'markdown' || source.format === 'docx') {
     onProgress?.({ progress: 65, message: 'Verifying the result matches your description…' });
-    const verification = await verifyCustomResult(workingDescription, await formattedTextFor(formatted), sourceTextForVerify, source.format, apiKey, fetcher, verificationNodeMap);
+    const verification = await verifyCustomResult(workingDescription, await formattedTextFor(formatted), sourceTextForVerify, source.format, apiKey, options, verificationNodeMap);
     if (!verification) {
       verificationNote = 'AI verification was inconclusive; proceeding with the current result.';
       break;

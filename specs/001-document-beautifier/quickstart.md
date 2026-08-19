@@ -26,9 +26,11 @@ yarn test:e2e
 yarn build
 ```
 
-Latest validation (Wave 8 complete): `yarn typecheck` pass; `yarn lint` pass; `yarn test` —
-14 files, 116 tests; `yarn test:e2e` — 51 tests across shadcn-flow, browser-product, ui,
-docx-preview, and preview specs; `yarn build` pass.
+Latest validation (Wave 9): `yarn typecheck` pass; `yarn lint` pass; `yarn test` — unit suites
+including `diff.test.ts`, `gemini-retry.test.ts`, and `hotkeys.test.tsx`; `yarn test:e2e` —
+Playwright specs across shadcn-flow, browser-product, ui, docx-preview, and preview; `yarn build`
+pass with lazy-loaded pages. Native: `swift test --package-path macos` including
+`NativeRetryAndCancellationTests.swift`.
 
 Focused regression checks must cover:
 
@@ -47,6 +49,14 @@ Focused regression checks must cover:
 13. Source and generated document contents are absent from browser storage after reload/close; only the documented API-key storage remains.
 14. Custom style runs the AI quality loop: description clarify → format → verify → (refine up to 2 rounds). A mocked verify that first fails then matches applies the corrective `rewrite-text` to a heading, reports `Rewritten headings` in the comparison, shows "AI verified the result matches your description." in the status and comparison summary, and export stays enabled only when the content check passes.
 15. An intentional heading rewrite via `expectedTextChanges` strips exactly the expected source and replacement lines; any other content difference still blocks export.
+16. Gemini calls retry on transient 429/500 (3 attempts, exponential backoff + jitter, `Retry-After`
+    honored) and abort when the workflow is reset; `gemini-retry.test.ts` mocks each scenario.
+17. DOCX inspect/format/extract run in a Web Worker (`src/web/workers/`) with a synchronous fallback
+    when `Worker` is unavailable; results match the synchronous path on fixtures.
+18. The review panel offers a `toggle-diff` button that renders a word-level diff (additions green,
+    removals red) between source and result text.
+19. Keyboard shortcuts work: `⌘+Enter` starts formatting, `⌘+1/2/3` switch panels,
+    `⌘+Shift+R` resets the workflow (Ctrl on non-macOS).
 
 ## Manual DOCX scenario
 

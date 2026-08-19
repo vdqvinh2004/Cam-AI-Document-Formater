@@ -1,5 +1,5 @@
-import JSZip from 'jszip';
 import type { BrowserFormattingOperation, BrowserPresentation } from './formatting/style-plan';
+import { inspectDocxViaWorker, formatDocxViaWorker, extractDocxTextViaWorker } from './workers/docx-worker-client';
 
 export interface DocxInspection {
   paragraphNodeIDs: string[];
@@ -32,37 +32,7 @@ function isHeadingParagraph(paragraph: Element): boolean {
 
 /** Mirrors the nodeID counter scheme used by the plan appliers. */
 export async function inspectDocx(source: ArrayBuffer): Promise<DocxInspection> {
-  const zip = await JSZip.loadAsync(toUint8Array(source));
-  const documentFile = zip.file('word/document.xml');
-  if (!documentFile) throw new Error('The DOCX package has no readable document part.');
-  const xml = await documentFile.async('string');
-  const doc = parseXml(xml);
-  const paragraphs = doc.getElementsByTagName('w:p');
-  const paragraphNodeIDs: string[] = [];
-  const headingNodeIDs: string[] = [];
-  const nodes: Array<{ nodeID: string; text: string }> = [];
-  let paragraphIndex = 0;
-  let headingIndex = 0;
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const isHeading = isHeadingParagraph(paragraphs[i]);
-    const nodeID = isHeading ? `h${headingIndex++}` : `p${paragraphIndex++}`;
-    const text = Array.from(paragraphs[i].getElementsByTagName('w:t'))
-      .map((run) => run.textContent ?? '')
-      .join('')
-      .trim();
-    if (isHeading) {
-      headingNodeIDs.push(nodeID);
-    } else {
-      paragraphNodeIDs.push(nodeID);
-    }
-    nodes.push({ nodeID, text });
-  }
-
-  const body = doc.getElementsByTagName('w:body')[0];
-  const blockCount = body ? buildBodyBlocks(body).blocks.length : 0;
-
-  return { paragraphNodeIDs, headingNodeIDs, blockCount, nodes };
+  return inspectDocxViaWorker(source);
 }
 
 function applyPresentation(rPr: Element, operation: BrowserFormattingOperation): void {
@@ -223,86 +193,9 @@ function reorderBodyBlocks(doc: Document, moves: Array<{ nodeID: string; targetI
 }
 
 export async function formatDocx(source: ArrayBuffer, plan: { version: number; operations: BrowserFormattingOperation[] }): Promise<Blob> {
-  if (source.byteLength === 0 || source.byteLength > MAX_PACKAGE_BYTES) {
-    throw new Error('DOCX is empty or exceeds the size limit.');
-  }
-
-  try {
-    const zip = await JSZip.loadAsync(toUint8Array(source));
-    const documentFile = zip.file('word/document.xml');
-    if (!documentFile) throw new Error('The DOCX package has no readable document part.');
-
-    const xml = await documentFile.async('string');
-    if (xml.length > MAX_XML_BYTES) throw new Error('The DOCX document part exceeds the size limit.');
-
-    const doc = parseXml(xml);
-    const presentationOps = new Map(
-      plan.operations.filter((op) => op.kind === 'set-presentation').map((op) => [op.nodeID, op as Extract<BrowserFormattingOperation, { kind: 'set-presentation' }>])
-    );
-    const rewrites = new Map(
-      plan.operations.filter((op) => op.kind === 'rewrite-text').map((op) => [op.nodeID, (op as Extract<BrowserFormattingOperation, { kind: 'rewrite-text' }>).text])
-    );
-    const moves = plan.operations.filter((op) => op.kind === 'move').map((op) => ({ nodeID: op.nodeID, targetIndex: (op as Extract<BrowserFormattingOperation, { kind: 'move' }>).targetIndex }));
-
-    const paragraphs = doc.getElementsByTagName('w:p');
-    let paragraphIndex = 0;
-    let headingIndex = 0;
-
-    for (let i = 0; i < paragraphs.length; i++) {
-      const paragraph = paragraphs[i];
-      const nodeID = isHeadingParagraph(paragraph) ? `h${headingIndex++}` : `p${paragraphIndex++}`;
-      const rewrite = rewrites.get(nodeID);
-      if (rewrite) {
-        applyRewriteTextToParagraph(paragraph, rewrite);
-        continue;
-      }
-      const op = presentationOps.get(nodeID);
-      if (!op) continue;
-      applyPresentationToParagraph(paragraph, op.presentation);
-    }
-
-    reorderBodyBlocks(doc, moves);
-
-    const updatedXml = serializeXml(doc);
-    zip.file('word/document.xml', updatedXml);
-
-    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-  } catch (error) {
-    throw new Error(`DOCX formatting failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
+  return formatDocxViaWorker(source, plan);
 }
 
 export async function extractDocxText(source: ArrayBuffer): Promise<string> {
-  if (source.byteLength === 0 || source.byteLength > MAX_PACKAGE_BYTES) {
-    return '';
-  }
-
-  try {
-    const zip = await JSZip.loadAsync(toUint8Array(source));
-    const documentFile = zip.file('word/document.xml');
-    if (!documentFile) return '';
-
-    const xml = await documentFile.async('string');
-    if (xml.length > MAX_XML_BYTES) return '';
-
-    const doc = parseXml(xml);
-    const paragraphs = doc.getElementsByTagName('w:p');
-    const texts: string[] = [];
-
-    for (let i = 0; i < paragraphs.length; i++) {
-      const paragraph = paragraphs[i];
-      const textNodes = paragraph.getElementsByTagName('w:t');
-      let paragraphText = '';
-      for (let j = 0; j < textNodes.length; j++) {
-        paragraphText += textNodes[j].textContent || '';
-      }
-      if (paragraphText.trim()) {
-        texts.push(paragraphText.trim());
-      }
-    }
-
-    return texts.join('\n');
-  } catch {
-    return '';
-  }
+  return extractDocxTextViaWorker(source);
 }

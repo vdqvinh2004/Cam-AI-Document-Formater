@@ -1,5 +1,7 @@
 import { useWorkflow } from '../state/workflow-context';
 import { Navigation } from './Navigation';
+import { KeyboardShortcuts } from './KeyboardShortcuts';
+import { StatusAnnouncer } from './StatusAnnouncer';
 import { ROUTES, type WebRoute } from '../types/route';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toaster';
@@ -28,6 +30,8 @@ export function AppShell({ children }: AppShellProps) {
           <span>Cam DocFormater</span>
         </div>
       </footer>
+      <KeyboardShortcuts />
+      <StatusAnnouncer />
       <Toaster />
     </div>
   );

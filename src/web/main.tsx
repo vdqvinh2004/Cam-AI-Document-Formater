@@ -1,27 +1,34 @@
-import { StrictMode, useEffect } from 'react';
+import { StrictMode, useEffect, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Router, useRouter } from './router';
 import { AppShell } from './components/AppShell';
-import { DashboardPage } from './pages/DashboardPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { PrivacyPage } from './pages/PrivacyPage';
-import { NotFoundPage } from './pages/NotFoundPage';
 import { WorkflowProvider, useWorkflow } from './state/workflow-context';
 import { ThemeProvider } from './providers/ThemeProvider';
 import './styles/globals.css';
 
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then(m => ({ default: m.PrivacyPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
+
 function RoutedPage() {
   const { currentRoute } = useRouter();
 
-  switch (currentRoute.path) {
-    case '/': return <DashboardPage />;
-    case '/setup':
-    case '/review':
-      return <DeepLinkRedirect />;
-    case '/settings': return <SettingsPage />;
-    case '/privacy': return <PrivacyPage />;
-    default: return <NotFoundPage path="*" />;
-  }
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center p-8 text-muted-foreground">Loading…</div>}>
+      {(() => {
+        switch (currentRoute.path) {
+          case '/': return <DashboardPage />;
+          case '/setup':
+          case '/review':
+            return <DeepLinkRedirect />;
+          case '/settings': return <SettingsPage />;
+          case '/privacy': return <PrivacyPage />;
+          default: return <NotFoundPage path="*" />;
+        }
+      })()}
+    </Suspense>
+  );
 }
 
 function DeepLinkRedirect() {

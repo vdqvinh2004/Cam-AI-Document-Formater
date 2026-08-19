@@ -165,8 +165,20 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     keyStore.removeKey();
     setKeyVersion((version) => version + 1);
   }, [keyStore]);
-  const resetWorkflow = useCallback(() => dispatch({ type: 'RESET_WORKFLOW' }), []);
+  const resetWorkflow = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    dispatch({ type: 'RESET_WORKFLOW' });
+  }, []);
+  const abortControllerRef = useState(() => ({ current: null as AbortController | null }))[0];
   const runFormatting = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     await runFormattingJob(state, {
       setJobStatus,
       setSourcePreview,
@@ -174,7 +186,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       setResult,
       setComparison,
       setActivePanel,
-    });
+    }, controller.signal);
   }, [state, setActivePanel, setComparison, setJobStatus, setResult, setResultPreview, setSourcePreview]);
 
   const value = useMemo(() => ({

@@ -4,9 +4,9 @@ The browser product is an in-memory SPA with these routes:
 
 | Route | Purpose | Empty-state behavior |
 |---|---|---|
-| `/` | Workspace and source intake | Show upload/drop guidance. |
-| `/setup` | Style, instructions, disclosure, and start action | Link back to workspace when no source exists. |
-| `/review` | Source/result preview, comparison, validation, and export | Explain that a result is required; export requires validation `pass`. |
+| `/` | Unified dashboard with `upload → configure → review` panels (driven by `?panel=`) | Show upload/drop guidance. |
+| `/setup` | Deep-link into the configure panel (redirects to `/?panel=configure`) | Redirect to `/` when no source exists. |
+| `/review` | Deep-link into the review panel (redirects to `/?panel=review`) | Redirect to `/` when no result exists; export requires validation `pass`. |
 | `/settings` | API-key status, replace, and remove actions | Never display the key. |
 | `/privacy` | Explain Gemini disclosure, in-memory document handling, key storage, and downloads | Always render independently of workflow state. |
 | unknown | Helpful not-found page | Provide a link to `/` and visible recovery guidance. |

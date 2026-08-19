@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-23
 
-**Status**: Draft
+**Status**: Implemented (Waves 1–9; see [plan.md](plan.md) and [tasks.md](tasks.md))
 
 **Input**: User description: "Build a native macOS desktop application that automatically beautifies and standardizes the formatting of documents while preserving all original content. Users can simply drag and drop a supported document (TXT, DOCX, PDF, Markdown, etc.), choose a formatting style (such as Simple, Modern, Professional, Easy to Read, Academic, or Custom), optionally provide additional formatting instructions, and generate a polished version of the document in the same file format. The application focuses solely on improving layout, spacing, alignment, typography, headings, lists, tables, and overall readability without rewriting, adding, or removing any content. Before exporting, the application validates that no content, images, tables, hyperlinks, or document structure have been lost or modified. The original file is never changed, and the application does not collect or store user documents. To use the application, users must provide their own Gemini API key, which is the only user data stored locally on the device for future use."
 
@@ -157,6 +157,21 @@ unavailable messaging where rendering or comparison is unsafe.
 - **SC-009**: 100% of supported TXT and Markdown workflow tests show source preview before generation and formatted preview after validation; each compare result either identifies presentation-only changes or reports an explicit unavailable state.
 - **SC-010**: 100% of DOCX and PDF fixtures with unsupported rendering or comparison capability show an explicit preview-unavailable state and remain subject to validation-gated export.
 - **SC-011**: At least 95% of valid fixture documents produce a preview, comparison result, or explicit unavailable state within 10 seconds after each local processing stage completes.
+
+## Implementation Status
+
+Implemented across two products (see [plan.md](plan.md) for the current architecture):
+
+- **Browser (Cam DocFormater Online)** — `src/web/`, React 19 + Vite 7 + Tailwind v4 + shadcn/ui.
+  Named styles apply on-device; Custom style uses Gemini with retry/backoff, `AbortSignal`
+  cancellation, and streaming progress. DOCX processing runs in a Web Worker with a synchronous
+  fallback. Pages are lazy-loaded; a word-level diff view shows formatting changes; global keyboard
+  shortcuts (`⌘+Enter`, `⌘+1/2/3`, `⌘+Shift+R`) and `aria-live` announcements are included.
+- **Native (Cam DocFormater App)** — `macos/`, SwiftUI (macOS 14+) with Keychain credential
+  storage, an actor-based `JobCoordinator`, retry-capable `HTTPGeminiClient`, and the same
+  validation-gated export rules as the browser.
+- PDF remains fail-closed: no safe renderer or transform is implemented, so preview is unavailable
+  and export is blocked while the original bytes are preserved.
 
 ## Assumptions
 
